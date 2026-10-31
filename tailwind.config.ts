@@ -1,0 +1,1 @@
+export default { content: ['./components/**/*.vue', './pages/**/*.vue', './app.vue'], theme: { extend: { colors: { cane: '#c8ee71', ink: '#24342c', cream: '#f8f9f3' }, fontFamily: { sans: ['Arial', 'Helvetica', 'sans-serif'] } } } }

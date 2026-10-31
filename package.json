@@ -1,0 +1,43 @@
+{
+  "name": "tebu-opis",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --host 127.0.0.1",
+    "build": "nuxt build",
+    "generate": "NUXT_PUBLIC_DEMO=true nuxt generate",
+    "start": "node .output/server/index.mjs",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "node --import tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@nuxtjs/tailwindcss": "6.14.0",
+    "drizzle-orm": "0.45.1",
+    "lucide-vue-next": "1.0.0",
+    "nuxt": "3.21.11",
+    "postgres": "3.4.7",
+    "reka-ui": "2.11.0",
+    "sharp": "0.34.5",
+    "vaul-vue": "0.4.1",
+    "vue": "3.5.44",
+    "vue-router": "4.6.4",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.21",
+    "drizzle-kit": "0.31.9",
+    "playwright": "1.62.0",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vue-tsc": "3.3.13"
+  },
+  "overrides": {
+    "lightningcss": "1.32.0",
+    "vite": "7.3.7",
+    "magic-string@>=1": "1.4.3"
+  }
+}
