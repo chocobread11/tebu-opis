@@ -1,0 +1,12 @@
+node_modules/
+.nuxt/
+.output/
+dist
+.env
+.env.*
+!.env.example
+data/
+test-results/
+playwright-report/
+*.tar.gz
+*.log

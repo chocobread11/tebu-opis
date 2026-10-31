@@ -1,0 +1,48 @@
+import { chromium } from 'playwright'
+import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+const browser = await chromium.launch({ headless: true })
+const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+const page = await context.newPage()
+const errors = []
+page.on('pageerror', error => errors.push(error.message))
+try {
+  await page.goto(process.env.TEBU_TEST_URL || 'http://127.0.0.1:3000')
+  await page.getByRole('button', { name: 'Add The Everyday Flask', exact: true }).click()
+  await page.getByRole('button', { name: 'LOCK MY BOTTLE' }).click()
+  await page.getByLabel('Malaysian mobile number').fill('0123456789')
+  await page.getByLabel('What should we write on your bag?').fill('Test Customer')
+  await page.getByRole('button', { name: 'Continue to payment' }).click()
+  await page.getByRole('button', { name: 'Continue demo' }).click()
+  await page.getByRole('button', { name: 'Use a sample receipt' }).click()
+  await page.getByRole('button', { name: 'Submit my receipt' }).click()
+  await page.getByRole('button', { name: 'View my pickup ticket' }).click()
+  await page.getByText('RECEIPT UNDER REVIEW', { exact: true }).waitFor()
+  const ticketUrl = page.url()
+  await page.getByRole('link', { name: 'Pantry ops' }).click()
+  await page.getByRole('button', { name: 'Confirm payment' }).click()
+  await page.locator('.packing-row input').check()
+  await page.getByRole('button', { name: '2. Pantry drop' }).click()
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ9kAAAAASUVORK5CYII=', 'base64')
+  await page.locator('input[type=file]').setInputFiles({ name: 'freezer.png', mimeType: 'image/png', buffer: png })
+  const ready = page.getByRole('button', { name: 'Mark packed bags ready for pickup' })
+  await ready.waitFor(); await page.waitForFunction(() => !document.querySelector('.admin-photo + button')?.disabled)
+  await ready.click()
+  await page.getByRole('button', { name: 'Preview WhatsApp message' }).click()
+  await page.getByRole('button', { name: 'Simulate sent' }).click()
+  await page.goto(ticketUrl)
+  await page.getByText('READY FOR PICKUP', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'I’VE PICKED UP MY BOTTLE' }).click()
+  await page.getByRole('button', { name: 'Yes, picked up' }).click()
+  await page.getByText('COLLECTED — THANK YOU', { exact: true }).waitFor()
+  await page.getByRole('link', { name: 'The drop' }).click()
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `Horizontal overflow at ${width}px`)
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mkdir('test-results', { recursive: true })
+  await page.screenshot({ path: 'test-results/home.png', fullPage: true })
+  assert.deepEqual(errors, [])
+  console.log('PASS: cart → checkout → receipt → review → pack → freezer → dispatch → collection; responsive widths; no browser errors.')
+} finally { await browser.close() }
