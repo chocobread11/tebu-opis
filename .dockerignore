@@ -1,5 +1,7 @@
 node_modules
+generated
 .nuxt
+.nuxt-check
 .output
 .git
 .env

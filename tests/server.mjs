@@ -7,7 +7,7 @@ process.env.NUXT_ADMIN_KEY = ''
 const { localFetch, closePrerenderer } = await import('../.nuxt/prerender/index.mjs')
 const request = (path, options = {}) => localFetch(path, { ...options, headers: { host: 'localhost', ...options.headers } })
 try {
-  for (const [path, text] of [['/', 'A little cane.'], ['/drop', 'Your little refresh.'], ['/admin', 'Good morning, operator.']]) {
+  for (const [path, text] of [['/', 'A little cane.'], ['/drop', 'Past transactions.'], ['/admin', 'Your drop checklist.'], ['/admin/calendar', 'Plan your drops.'], ['/admin/log', 'A little bookkeeping.']]) {
     const response = await request(path)
     assert.equal(response.status, 200)
     const html = await response.text()
@@ -17,6 +17,7 @@ try {
   }
   assert.equal((await request('/api/health')).status, 200)
   assert.equal((await request('/api/admin')).status, 401)
+  assert.equal((await request('/api/orders')).status, 401)
   assert.equal((await request('/api/orders/not-a-token')).status, 404)
   assert.equal((await request('/api/catalog')).status, 503)
   assert.equal((await request('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': '2' }, body: '{}' })).status, 401)

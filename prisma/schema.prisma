@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Customer {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone     String?  @unique(map: "customers_phone_unique")
+  name      String
+  tokenHash String   @unique(map: "customers_token_hash_unique") @map("token_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  orders    Order[]
+
+  @@map("customers")
+}
+
+model Schedule {
+  id           String    @id
+  capacity     Int       @default(11)
+  flaskCapacity Int      @default(8) @map("flask_capacity")
+  jugCapacity Int        @default(3) @map("jug_capacity")
+  open         Boolean   @default(true)
+  photoId      String?   @map("photo_id") @db.Uuid
+  droppedAt    DateTime? @map("dropped_at") @db.Timestamptz(6)
+  closedReason String?   @map("closed_reason")
+  removedAt    DateTime? @map("removed_at") @db.Timestamptz(6)
+  orders       Order[]
+  media        Media[]
+  photo        Media?    @relation("PublishedPhoto", fields: [photoId], references: [id], onDelete: SetNull)
+  expenses     Expense[]
+  harvests     Harvest[]
+
+  @@map("schedules")
+}
+
+model Order {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token       String       @unique(map: "orders_token_unique")
+  requestId   String       @unique(map: "orders_request_id_unique") @map("request_id") @db.Uuid
+  customerId  String       @map("customer_id") @db.Uuid
+  scheduleId  String       @map("schedule_id")
+  sequence    Int
+  tag         String
+  cart        Json         @db.JsonB
+  bottles     Int
+  total       Int
+  // Kept as text to preserve the existing database; allowed values are checked in SQL.
+  status      String       @default("pending_payment")
+  manualPaymentStatus String? @map("manual_payment_status")
+  customerName String? @map("customer_name")
+  receiptId   String?      @map("receipt_id") @db.Uuid
+  packed      Boolean      @default(false)
+  notified    Boolean      @default(false)
+  expiresAt   DateTime     @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_customer_id_customers_id_fk")
+  schedule    Schedule     @relation(fields: [scheduleId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_schedule_id_schedules_id_fk")
+  media       Media[]
+  receipt     Media?       @relation("SubmittedReceipt", fields: [receiptId], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+  varietyId   String?      @map("variety_id")
+  varietyName String?      @map("variety_name")
+  variety     CaneVariety? @relation(fields: [varietyId], references: [id], onDelete: Restrict)
+
+  @@unique([scheduleId, sequence], map: "schedule_sequence")
+  @@map("orders")
+}
+
+model Media {
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  filename           String
+  kind               String
+  orderId            String?    @map("order_id") @db.Uuid
+  scheduleId         String?    @map("schedule_id")
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  order              Order?     @relation(fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "media_order_id_orders_id_fk")
+  schedule           Schedule?  @relation(fields: [scheduleId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "media_schedule_id_schedules_id_fk")
+  publishedSchedules Schedule[] @relation("PublishedPhoto")
+  submittedOrders    Order[]    @relation("SubmittedReceipt")
+
+  @@map("media")
+}
+
+model Product {
+  id          String      @id
+  name        String
+  size        String
+  description String
+  kind        String
+  price       Int
+  active      Boolean     @default(true)
+  sortOrder   Int         @default(0) @map("sort_order")
+  items       OrderItem[]
+
+  @@map("products")
+}
+
+model OrderItem {
+  orderId   String  @map("order_id") @db.Uuid
+  productId String  @map("product_id")
+  quantity  Int
+  unitPrice Int     @map("unit_price")
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@id([orderId, productId])
+  @@map("order_items")
+}
+
+model Expense {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date       DateTime  @db.Date
+  amount     Int
+  note       String    @default("")
+  scheduleId String?   @map("schedule_id")
+  schedule   Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([date])
+  @@index([scheduleId])
+  @@map("expenses")
+}
+
+model Harvest {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date       DateTime     @db.Date
+  type       String
+  quantity   Decimal      @db.Decimal(10, 2)
+  varietyId  String?      @map("variety_id")
+  variety    CaneVariety? @relation(fields: [varietyId], references: [id], onDelete: Restrict)
+  flaskQty   Int          @default(0) @map("flask_qty")
+  jugQty     Int          @default(0) @map("jug_qty")
+  scheduleId String?      @map("schedule_id")
+  schedule   Schedule?    @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([date])
+  @@index([scheduleId])
+  @@index([varietyId])
+  @@map("harvests")
+}
+
+model CaneVariety {
+  id          String    @id
+  name        String
+  description String    @default("")
+  sortOrder   Int       @default(0) @map("sort_order")
+  harvests    Harvest[]
+  orders      Order[]
+
+  @@map("cane_varieties")
+}

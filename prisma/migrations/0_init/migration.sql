@@ -8,7 +8,7 @@ CREATE TABLE "customers" (
 	CONSTRAINT "customers_token_hash_unique" UNIQUE("token_hash"),
 	CONSTRAINT "phone_format" CHECK ("customers"."phone" ~ '^601[0-9]{8,9}$')
 );
---> statement-breakpoint
+
 CREATE TABLE "media" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"filename" text NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE "media" (
 	"schedule_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
---> statement-breakpoint
+
 CREATE TABLE "orders" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"token" text NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE "orders" (
 	CONSTRAINT "order_bottles_positive" CHECK ("orders"."bottles" > 0),
 	CONSTRAINT "order_status" CHECK ("orders"."status" in ('pending_payment','pending_review','confirmed','ready','collected','rejected'))
 );
---> statement-breakpoint
+
 CREATE TABLE "schedules" (
 	"id" text PRIMARY KEY NOT NULL,
 	"capacity" integer DEFAULT 30 NOT NULL,
@@ -50,9 +50,9 @@ CREATE TABLE "schedules" (
 	"dropped_at" timestamp with time zone,
 	CONSTRAINT "positive_capacity" CHECK ("schedules"."capacity" > 0)
 );
---> statement-breakpoint
-ALTER TABLE "media" ADD CONSTRAINT "media_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "media" ADD CONSTRAINT "media_schedule_id_schedules_id_fk" FOREIGN KEY ("schedule_id") REFERENCES "public"."schedules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "orders" ADD CONSTRAINT "orders_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "orders" ADD CONSTRAINT "orders_schedule_id_schedules_id_fk" FOREIGN KEY ("schedule_id") REFERENCES "public"."schedules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+
+ALTER TABLE "media" ADD CONSTRAINT "media_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "media" ADD CONSTRAINT "media_schedule_id_schedules_id_fk" FOREIGN KEY ("schedule_id") REFERENCES "public"."schedules"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "orders" ADD CONSTRAINT "orders_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "orders" ADD CONSTRAINT "orders_schedule_id_schedules_id_fk" FOREIGN KEY ("schedule_id") REFERENCES "public"."schedules"("id") ON DELETE no action ON UPDATE no action;
 CREATE UNIQUE INDEX "schedule_sequence" ON "orders" USING btree ("schedule_id","sequence");
