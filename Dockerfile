@@ -5,6 +5,7 @@ COPY prisma ./prisma
 COPY prisma.config.ts ./
 RUN npm ci --ignore-scripts
 COPY . .
+RUN ./node_modules/.bin/prisma generate
 RUN npm run build
 
 FROM node:22-alpine

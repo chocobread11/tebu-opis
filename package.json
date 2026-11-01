@@ -10,7 +10,7 @@
     "build": "nuxt build",
     "generate": "NUXT_PUBLIC_DEMO=true nuxt generate",
     "start": "node .output/server/index.mjs",
-    "postinstall": "prisma generate && nuxt prepare",
+    "postinstall": "nuxt prepare && prisma generate",
     "typecheck": "nuxt typecheck",
     "test": "node --import tsx --test tests/*.test.ts",
     "db:generate": "prisma generate",
