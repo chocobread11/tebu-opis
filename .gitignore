@@ -1,5 +1,7 @@
 node_modules/
+generated/prisma/
 .nuxt/
+.nuxt-check/
 .output/
 dist
 .env
@@ -8,5 +10,7 @@ dist
 data/
 test-results/
 playwright-report/
+coverage/
+.DS_Store
 *.tar.gz
 *.log
