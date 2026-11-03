@@ -2,6 +2,8 @@ node_modules/
 generated/prisma/
 .nuxt/
 .nuxt-check/
+.nuxt-design/
+.nuxt-build/
 .output/
 dist
 .env

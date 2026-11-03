@@ -16,12 +16,18 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:seed:week": "node --import tsx scripts/seed-week.ts",
     "db:migrate:dev": "prisma migrate dev",
     "db:seed:schedules": "prisma db seed -- --schedules-only",
     "db:studio": "prisma studio",
-    "test:database": "node tests/database.mjs"
+    "test:database": "node tests/database.mjs",
+    "test:admin-transactions": "node tests/admin-transactions.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@hugeicons/core-free-icons": "^4.4.0",
+    "@hugeicons/vue": "^1.0.8",
     "@nuxtjs/tailwindcss": "6.14.0",
     "@prisma/adapter-pg": "7",
     "@prisma/client": "7",

@@ -34,9 +34,9 @@ Same codebase, two deploy targets:
 - Collection confirmation and full order history keyed to the customer token — never to the phone number alone.
 
 **Operations console** (`/admin`, key-protected)
-- Packing and pantry-drop checklist that auto-refreshes and rolls over at Malaysia-time midnight.
-- WhatsApp dispatch preview per customer, with explicit "I've sent it" confirmation — the app never sends messages itself.
-- Month calendar: open/close dates, per-date bottle capacity, closures for MC/AL, and offline **manual orders** (paid/unpaid) that reserve stock without a checkout timeout.
+- Daily packing list of confirmed orders, plus today's pantry drop and pickup activity. The checklist auto-refreshes and rolls over at Malaysia-time midnight.
+- One transaction table for drop status, collection and per-customer WhatsApp ticket links. WhatsApp opens a composer; opening it does not mark a message as sent.
+- Month calendar: open/close dates, per-date bottle capacity, closures for MC/AL, and offline **manual orders** (paid/unpaid) that reserve stock without a checkout timeout. Its transaction history searches all dates, offers 10/25/50/100 rows per page, and supports editing and confirmed deletion. Edits retain original item prices and enforce stock and daily limits; deletion removes the ticket, items, and receipt metadata and releases stock.
 - Financial log: revenue (all paid orders), expense and tebu-harvest CRUD; harvest output drives the live sellable bottle stock.
 
 **Platform**
@@ -56,8 +56,8 @@ NUXT_PUBLIC_DEMO=true npm run dev
 
 Everything runs in the browser: add bottles, complete a demo checkout with the
 sample receipt, open **Admin**, confirm payment, pack, upload a freezer photo,
-preview the WhatsApp message and collect. Demo records live in `localStorage`;
-demo WhatsApp previews never contact real numbers.
+share the tokenized status ticket and collect. Demo records live in `localStorage`.
+WhatsApp opens an external composer only when its button is explicitly clicked; the app never sends messages itself.
 
 ### Full stack
 
@@ -74,6 +74,10 @@ npm run dev
 The seed adds products, customers, orders across workflow stages, receipt and
 freezer images, expenses, harvests and bottle stock. It preserves existing
 records and prints sample customer bearer tokens and ticket links for local use.
+Run `npm run db:seed:week` to fill the current Malaysia ordering week with sample
+orders across workflow stages, 12 customers, two harvests, and five expenses.
+This repeatable development seed preserves existing orders, daily capacity, and
+calendar closures; sample customers have no real phone numbers.
 For production schedules use `npm run db:seed:schedules` (Mon–Thu dates,
 current + next month, preserving closures and custom capacity).
 
@@ -85,10 +89,33 @@ current + next month, preserving closures and custom capacity).
 | `NUXT_ADMIN_KEY` | DB mode | Admin passkey — **≥ 32 random characters** |
 | `NUXT_PUBLIC_DEMO` | always | `false` for production ordering |
 | `NUXT_UPLOAD_DIR` | DB mode | Private uploads directory (Docker: `/app/data/uploads`) |
-| `NUXT_PUBLIC_DUITNOW_QR` | production | Path to your real merchant QR image |
-| `NUXT_PUBLIC_MERCHANT_NAME` | optional | Merchant display name |
+| `NUXT_PUBLIC_DUITNOW_QR` | optional | Payment QR image URL (defaults to `/qr/duitnow.jpeg`, served from `public/qr/duitnow.jpeg`) |
+| `NUXT_PUBLIC_MERCHANT_NAME` | optional | Payment recipient display name (defaults to `Tebu Drop`) |
 
 All secrets stay server-side; only `.env.example` is committed.
+
+
+### Packing and pantry operations
+
+Pack at home lists each transaction with its customer, phone, items, total, payment and packed status. Details opens the traceable record and payment evidence; the separate receipt-review panel is removed. Pending-review orders must still be confirmed before packing. Packing saves an explicit boolean and is reflected on the public ticket as “Packed — awaiting pantry drop.”
+
+Pantry drop combines collection progress and per-row WhatsApp buttons. Each button opens a message containing `/drop?t=<private-token>` so the customer can follow packing, pantry publication and pickup status. There is no sent-message queue or automatic delivery claim. Admin and ticket views refresh every five seconds and on returning to the tab; demo tabs also synchronize through storage events.
+
+### Checkout and transaction history
+
+Checkout progresses through details → DuitNow payment → receipt upload → order ticket. The action button stays below the scrollable step content. The MAE screenshot is displayed through a QR-only viewport; its original pixels and payload are unchanged. Payment receipts remain private to the operator, and an order ticket is not proof that payment has been verified.
+
+`/drop` displays a phone lookup and past-transactions table. A remembered number is checked automatically. Customers can opt into password protection during checkout, or add/change/remove it in history privacy settings. Without protection, anyone who knows the number can view its history. Private ticket links continue to act as bearer capabilities. There is no phone-ownership verification or password reset flow.
+
+Apply `npm run db:migrate` before deploying the updated server to add `customers.password_hash` and the expiring `customer_sessions` table. Existing customer/order records are preserved; existing customers start without a history password.
+
+### Cloudflare R2 uploads
+
+Fill the `NUXT_R2_*` entries in `.env`, then set `NUXT_UPLOAD_STORAGE=r2` and restart the server. Required: account ID (or explicit S3 endpoint), access key ID, secret access key, and bucket name. The optional prefix defaults to `tebu/media`. Use an R2 Object Read & Write credential scoped to the bucket. All R2 credentials are server-only; no public bucket URL or browser CORS configuration is required.
+
+Receipt/freezer uploads are compressed and verified before storage. The app reads private objects through `/api/media/:id`, retaining receipt authorization and published-photo checks. Existing local media and seed images remain readable after switching to R2. New R2 records store their object key in the existing media filename field; no schema migration is needed. Local storage stays enabled until you switch the driver. Actual Cloudflare connectivity must be checked after credentials are supplied.
+
+See [Cloudflare’s S3 SDK guide](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/) and [R2 access-key setup](https://developers.cloudflare.com/r2/api/tokens/).
 
 ## Architecture
 
@@ -132,6 +159,7 @@ npm run typecheck
 npm run generate && node tests/server.mjs    # SSR + security guards smoke test
 node tests/browser.mjs    # Playwright: full order → review → pack → drop → collect
 npm run test:database     # throwaway Postgres: migrations, seeds, capacity races, receipts
+npm run test:admin-transactions # throwaway Postgres + browser: archive search, edit/delete, daily packing
 ```
 
 The database suite must run on a server where the role can create databases; it
@@ -141,7 +169,7 @@ uploads — including concurrency races and cross-reload persistence.
 ## Deployment (Coolify)
 
 1. Create a PostgreSQL service on the private network; keep 5432 unexposed. Back up the database **and** uploads volume together.
-2. Put the real merchant DuitNow QR at `public/duitnow-qr.png` and verify it scans to the right account with a small end-to-end payment before opening orders.
+2. The MAE QR image is served from `public/qr/duitnow.jpeg`, with `Tebu Drop` as the payment recipient display name. Replace that file to update the QR, or override `NUXT_PUBLIC_DUITNOW_QR` and `NUXT_PUBLIC_MERCHANT_NAME`. Verify it scans to the right account with a small end-to-end payment before opening orders. Demo mode continues to show a sample QR. Receipt verification is manual.
 3. Set `.env.example` variables; never commit `.env`.
 4. From a trusted runner with DB access: `npm run db:migrate && npm run db:seed:schedules`.
 5. Deploy the Dockerfile on port 3000; mount a persistent volume at `/app/data/uploads` (UID 1000). Configure HTTPS and request body limits (300 KB) at your edge.
@@ -157,9 +185,9 @@ Never reset a production database.
 ## Security model
 
 - **Server-side truth.** All totals, prices, capacity and stock checks happen server-side; checkout saves per-line price snapshots so later price changes never rewrite history.
-- **Tokens, not accounts.** Normalized phone numbers identify records; 256-bit bearer tokens authorize access and are stored only as SHA-256 digests. A phone number alone cannot retrieve someone's data. Changing devices requires operator-assisted recovery.
+- **Phone-based history with optional passwords.** Checkout remembers the normalized phone number in localStorage. Unprotected histories can be looked up with that number alone. Protected histories require a password; production passwords use salted scrypt hashes. Successful access issues a 24-hour bearer session stored as a SHA-256 digest server-side. Enabling, changing or removing protection revokes previous sessions. Passwords are never stored in localStorage. Demo credentials use salted PBKDF2 hashes locally and only demonstrate the flow.
 - **Capability links.** Pickup ticket URLs (`/drop?t=…`) are bearer capabilities: holders can view the ticket and confirm collection. Do not share them. Receipt access requires the admin key; freezer photos publish only after the operator dispatches.
-- **Not included by design.** Phone-ownership verification, CSP (left to the operator's domain), automated payment verification, self-service token reset, retention cleanup jobs and multi-replica rate limiting are intentionally out of scope. See [SECURITY.md](SECURITY.md) for the full model and hardening checklist.
+- **Not included by design.** Phone-ownership verification, CSP (left to the operator's domain), automated payment verification, password recovery, retention cleanup jobs and multi-replica rate limiting are intentionally out of scope. See [SECURITY.md](SECURITY.md) for the full model and hardening checklist.
 - **Scale assumption.** One Node replica; the in-process limiter (120 req/min per IP) is keyed on `X-Forwarded-For` behind proxies. Use a shared limiter before scaling out.
 
 ## Contributing

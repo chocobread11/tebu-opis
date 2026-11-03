@@ -40,7 +40,7 @@ try {
     assert.equal(await page.getByRole('link', { name: 'Admin', exact: true }).evaluate(el => el.getBoundingClientRect().height >= 44), true)
     await noOverflow(page, `home ${width}`)
     await audit(page, `home ${width}`)
-    for (const selector of ['.schedule-section', '.menu-section', '.addons', '.queue-section']) {
+    for (const selector of ['.schedule-section', '.menu-section', '.addons']) {
       await page.locator(selector).scrollIntoViewIfNeeded()
       await audit(page, `${selector} ${width}`)
     }

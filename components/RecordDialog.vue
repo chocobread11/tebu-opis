@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle, DialogDescription, DialogClose } from 'reka-ui'
-import { X } from 'lucide-vue-next'
+import { X } from '~/lib/icons'
 const props = defineProps<{ open: boolean; title: string; description: string; busy?: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 let trigger: HTMLElement | null = null

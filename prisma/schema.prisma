@@ -12,10 +12,22 @@ model Customer {
   phone     String?  @unique(map: "customers_phone_unique")
   name      String
   tokenHash String   @unique(map: "customers_token_hash_unique") @map("token_hash")
+  passwordHash String? @map("password_hash")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   orders    Order[]
+  sessions  CustomerSession[]
 
   @@map("customers")
+}
+
+model CustomerSession {
+  tokenHash  String   @id @map("token_hash")
+  customerId String  @map("customer_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_sessions")
 }
 
 model Schedule {

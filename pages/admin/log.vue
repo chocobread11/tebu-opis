@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowDownLeft, ArrowUpRight, Plus, Pencil, Trash2, Sprout, ReceiptText, Wallet, CalendarDays } from 'lucide-vue-next'
+import { ArrowDownLeft, ArrowUpRight, Plus, Pencil, Trash2, Sprout, ReceiptText, Wallet, CalendarDays } from '~/lib/icons'
 import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '~/components/ui/table'
 import { NativeSelect, NativeSelectOption } from '~/components/ui/native-select'
 import { money } from '~/shared/domain'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Leaf, ShoppingBag, History, ClipboardCheck, BookOpen, CalendarDays, ArrowUpRight, ArrowLeft } from 'lucide-vue-next'
+import { Leaf, ShoppingBag, History, ClipboardCheck, BookOpen, CalendarDays, ArrowUpRight, ArrowLeft } from '~/lib/icons'
 const route = useRoute()
 const shop = useShop()
 const scrollArea = ref<HTMLElement | null>(null)
@@ -17,7 +17,6 @@ watch(() => route.fullPath, async () => {
 })
 </script>
 <template>
-  <div class="desktop-note"><span class="desktop-wordmark">tebu<span>drop.</span></span><p>A fresh little ritual<br>for your workday.</p><span class="note-rule"></span><small>COLD-PRESSED. PANTRY-READY.</small></div>
   <div :class="['app-shell', { 'demo-mode': shop.demo, 'admin-shell': isAdmin }]">
     <header v-if="isAdmin" class="app-header admin-header">
       <NuxtLink to="/" class="admin-back" aria-label="Storefront"><ArrowLeft aria-hidden="true" :size="16" /></NuxtLink>
@@ -41,5 +40,4 @@ watch(() => route.fullPath, async () => {
     <Transition name="toast"><div v-if="shop.toast.value" class="toast" role="status">{{ shop.toast.value }}</div></Transition>
     <CheckoutDrawer />
   </div>
-  <div class="desktop-footer">FROM THE CANE. TO YOUR OFFICE. <span>↙</span></div>
 </template>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Plus } from 'lucide-vue-next'
+import { Plus } from '~/lib/icons'
 import { NativeSelect, NativeSelectOption } from '~/components/ui/native-select'
 import { emptyCart, bottleCount, total, money, cartSummary, malaysiaToday, normalizePhone, type Ticket } from '~/shared/domain'
-const props = defineProps<{ scheduleId: string }>()
+const props = defineProps<{ scheduleId: string; createOnly?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 const admin = useAdmin()
 const shop = useShop()
@@ -49,10 +49,10 @@ async function update(order: Ticket, cancel = false) {
 </script>
 <template>
   <section class="ops-section manual-orders" :aria-busy="busy">
-    <div class="section-heading"><div><h2>Manual orders</h2><p class="ops-caption">Standard per day: 8 small · 3 big. Paid and unpaid orders reserve stock; paid orders count toward profit.</p></div><button class="primary" @click="start"><Plus aria-hidden="true" :size="16" />Add order</button></div>
-    <p v-if="!orders.length" class="helper">No manual orders for this date. Use Add order to record an offline sale.</p>
+    <div class="section-heading"><div><h2>Manual orders</h2><p class="ops-caption">Record an offline order and reserve its bottles.</p></div><button class="primary" type="button" @click="start"><Plus aria-hidden="true" :size="16" />Add order</button></div>
+    <p v-if="!createOnly && !orders.length" class="helper">No manual orders for this date. Use Add order to record an offline sale.</p>
     <p v-if="error && !open && !cancelling" class="error" role="alert">{{ error }}</p>
-    <article v-for="order in orders" :key="order.token" class="review-card">
+    <article v-for="order in createOnly ? [] : orders" :key="order.token" class="review-card">
       <div class="review-head"><strong>{{ order.tag }} · {{ order.name }}</strong><b>{{ money(order.total) }}</b></div>
       <p>{{ order.varietyName }} · {{ cartSummary(order.cart, shop.products) }}</p>
       <div class="review-actions"><span class="ops-badge">{{ order.status === 'rejected' ? 'Cancelled' : order.manualPaymentStatus === 'paid' ? 'Paid' : 'Unpaid' }}</span><template v-if="order.status !== 'rejected'"><button class="text-button danger" :disabled="busy" @click="error = ''; cancelling = order">Cancel order</button><button class="secondary" :disabled="busy" @click="update(order)">Mark {{ order.manualPaymentStatus === 'paid' ? 'unpaid' : 'paid' }}</button></template></div>
@@ -67,15 +67,9 @@ async function update(order: Ticket, cancel = false) {
         <div><label class="field-label" for="manual-payment">Payment status</label><NativeSelect id="manual-payment" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" v-model="form.paymentStatus"><NativeSelectOption value="unpaid">Unpaid</NativeSelectOption><NativeSelectOption value="paid">Paid</NativeSelectOption></NativeSelect></div>
         <p><strong>Total: {{ money(total(form.cart, shop.products)) }}</strong></p>
         <p v-if="error" id="manual-order-error" class="error" role="alert">{{ error }}</p>
-        <div class="record-form-actions"><button class="secondary" type="button" :disabled="busy" @click="open = false">Cancel</button><button class="primary" :disabled="busy">{{ busy ? 'Saving…' : 'Save order' }}</button></div>
+        <div class="record-form-actions"><button class="secondary" type="button" :disabled="busy" @click="open = false">Cancel</button><button class="primary" type="submit" :disabled="busy">{{ busy ? 'Saving…' : 'Save order' }}</button></div>
       </form>
     </RecordDialog>
     <ConfirmDialog :open="!!cancelling" title="Cancel this manual order?" :description="`Order ${cancelling?.tag || ''} will be cancelled and its bottles returned to available stock.`" confirm-label="Cancel order" cancel-label="Keep order" :busy="busy" :error="error" @confirm="cancelling && update(cancelling, true)" @update:open="value => { if (!value) cancelling = null }" />
   </section>
 </template>
-<style scoped>
-.manual-orders { margin-block: 20px; }
-.manual-orders .section-heading { flex-wrap: wrap; gap: 12px; }
-.manual-order-form { display: grid; gap: 14px; }
-.manual-order-form input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--ui-control-line); border-radius: 10px; background: white; color: inherit; }
-</style>

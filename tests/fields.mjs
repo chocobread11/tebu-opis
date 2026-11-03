@@ -24,6 +24,7 @@ try {
   assert.equal(await quantity.inputValue(), '0')
   await quantity.fill('3')
   await quantity.press('Tab')
+  await page.getByRole('button', { name: 'Order details', exact: true }).click()
   await page.getByRole('listitem').filter({ hasText: 'The Everyday Flask' }).waitFor()
 
   await page.goto(new URL('/admin/calendar', page.url()).href)

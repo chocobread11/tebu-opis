@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDays, RefreshCw } from 'lucide-vue-next'
+import { CalendarDays, RefreshCw } from '~/lib/icons'
 import { malaysiaToday, publicDeliveryDays, type ActiveWeek, type CalendarDay } from '~/shared/domain'
 const props = defineProps<{ modelValue: string; week: ActiveWeek; days: CalendarDay[]; loading?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>()

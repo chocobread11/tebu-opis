@@ -68,3 +68,15 @@ test('public delivery dates show only active weekdays, with Friday optional', as
   assert.deepEqual(publicDeliveryDays(days, week, new Date('2026-11-04T08:00:00Z')).map(day => day.id), ['2026-11-05', '2026-11-06'])
   assert.deepEqual(publicDeliveryDays(days, week, new Date('2026-11-07T08:00:00Z')), [])
 })
+
+test('ticket status includes packing and WhatsApp links preserve the private token', async () => {
+  const { ticketStatusLabel, ticketWhatsAppUrl } = await import('../shared/domain')
+  assert.equal(ticketStatusLabel({ status: 'confirmed', packed: false }), 'Payment confirmed')
+  assert.equal(ticketStatusLabel({ status: 'confirmed', packed: true }), 'Packed — awaiting pantry drop')
+  assert.equal(ticketStatusLabel({ status: 'ready', packed: true }), 'Ready for pickup')
+  const url = new URL(ticketWhatsAppUrl({ phone: '60123456789', token: 'private-token', name: 'A & B', tag: '#A01' }, 'https://tebu.example'))
+  assert.equal(url.origin, 'https://wa.me')
+  assert.equal(url.pathname, '/60123456789')
+  assert.ok(url.searchParams.get('text')!.includes('https://tebu.example/drop?t=private-token'))
+  assert.equal(ticketWhatsAppUrl({ phone: '', token: 'x', name: 'A', tag: '#A01' }, 'https://tebu.example'), '')
+})

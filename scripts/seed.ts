@@ -43,7 +43,7 @@ try {
       await tx.media.upsert({ where: { id: sampleId(500) }, update: {}, create: { id: sampleId(500), kind: 'freezer', filename: freezerFilename, scheduleId: pastId } })
       await tx.schedule.updateMany({ where: { id: pastId, photoId: null }, data: { photoId: sampleId(500) } })
       for (const customer of sampleCustomers) {
-        await tx.customer.upsert({ where: { id: customer.id }, update: {}, create: { ...customer, tokenHash: createHash('sha256').update(sampleToken(customer.id)).digest('hex') } })
+        await tx.customer.upsert({ where: { id: customer.id }, update: { phone: customer.phone }, create: { ...customer, tokenHash: createHash('sha256').update(sampleToken(customer.id)).digest('hex') } })
       }
       for (const [index, fixture] of sampleOrders.entries()) {
         const id = sampleId(100 + index)

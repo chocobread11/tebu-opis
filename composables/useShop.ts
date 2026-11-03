@@ -10,21 +10,39 @@ export function useShop() {
   const varieties = useState<CaneStock[]>('cane-varieties', () => demo ? demoVarieties.map(v => ({ ...v })) : [])
   const varietyId = useState<string>('selected-variety', () => demo ? 'tebu-1' : '')
   const variety = computed(() => varieties.value.find(row => row.id === varietyId.value))
-  const queue = useState<{ tag: string; name: string }[]>('queue', () => [])
   const cart = useState<Cart>('cart', emptyCart)
   const drops = useState<Drop[]>('drops', () => demo ? defaultMonthSchedules().filter(day => day.id >= week.value.start && day.id <= week.value.end).map(day => describeDrop(day.id)) : [])
   const selected = useState('selected', () => drops.value[0]?.id || '')
   const tickets = useState<Ticket[]>('tickets', () => [])
   const customerToken = useState('customerToken', () => '')
   const customerName = useState('customerName', () => '')
+  const customerPhone = useState('customerPhone', () => '')
   const checkoutOpen = useState('checkoutOpen', () => false)
+  const checkoutDraft = useState<Ticket | null>('checkoutDraft', () => null)
   const toast = useState('toast', () => '')
   function notify(message: string) { toast.value = message; setTimeout(() => { toast.value = '' }, 4000) }
-  function persist() { if (import.meta.client && demo) localStorage.setItem('tebu_demo_orders', JSON.stringify(tickets.value)) }
+  function persist() {
+    if (!import.meta.client || !demo) return
+    let latest: Ticket[] = []
+    try { latest = JSON.parse(localStorage.getItem('tebu_demo_orders') || '[]') } catch { /* Start with this device's current orders. */ }
+    const incoming = new Map(tickets.value.map(ticket => [ticket.token, ticket]))
+    const merged = latest.map(stored => {
+      const update = incoming.get(stored.token)
+      incoming.delete(stored.token)
+      if (!update) return stored
+      // Customer writes can submit receipts and confirm pickup, but must not undo admin packing/drop changes.
+      const status = update.status === 'pending_review' && stored.status === 'pending_payment' ? 'pending_review'
+        : update.status === 'collected' && ['ready', 'collected'].includes(stored.status) ? 'collected' : stored.status
+      return { ...update, ...stored, status }
+    })
+    tickets.value = [...incoming.values(), ...merged]
+    localStorage.setItem('tebu_demo_orders', JSON.stringify(tickets.value))
+  }
   function load() {
     if (!import.meta.client) return
     customerToken.value = localStorage.getItem('customer_token') || ''
     customerName.value = localStorage.getItem('customer_name') || ''
+    customerPhone.value = localStorage.getItem('customer_phone') || ''
     if (demo) { try { tickets.value = JSON.parse(localStorage.getItem('tebu_demo_orders') || '[]') } catch { tickets.value = [] } }
   }
   function available(id: keyof Cart) {
@@ -39,10 +57,10 @@ export function useShop() {
   }
   async function refreshDrops() {
     if (demo) { syncDemoCalendar(); return }
-    const data = await $fetch<{ week: ActiveWeek; days: CalendarDay[]; varieties: CaneStock[]; drops: Drop[]; products: Product[]; queue: { tag: string; name: string }[] }>('/api/catalog')
+    const data = await $fetch<{ week: ActiveWeek; days: CalendarDay[]; varieties: CaneStock[]; drops: Drop[]; products: Product[] }>('/api/catalog')
     const changedWeek = data.week.start !== week.value.start
     week.value = data.week
-    days.value = data.days; varieties.value = data.varieties; drops.value = data.drops; catalog.value = data.products; queue.value = data.queue
+    days.value = data.days; varieties.value = data.varieties; drops.value = data.drops; catalog.value = data.products
     if (!varieties.value.some(row => row.id === varietyId.value)) varietyId.value = varieties.value.find(row => row.flaskRemaining + row.jugRemaining > 0)?.id || varieties.value[0]?.id || ''
     if (!drops.value.some(d => d.id === selected.value && d.remaining > 0)) selected.value = (!catalogLoaded.value || changedWeek) ? drops.value.find(day => day.remaining > 0)?.id || '' : ''
     catalogLoaded.value = true
@@ -50,10 +68,13 @@ export function useShop() {
   async function refreshTickets() {
     load()
     if (!demo && customerToken.value) {
+      const token = customerToken.value
       try {
-        const data = await $fetch<{ orders: Ticket[] }>('/api/orders', { headers: { Authorization: `Bearer ${customerToken.value}` } })
+        const data = await $fetch<{ orders: Ticket[] }>('/api/orders', { headers: { Authorization: `Bearer ${token}` } })
+        if (customerToken.value !== token) return
         tickets.value = data.orders
       } catch (e: any) {
+        if (customerToken.value !== token) return
         if (e?.status === 401 || e?.statusCode === 401) {
           customerToken.value = ''; customerName.value = ''
           localStorage.removeItem('customer_token'); localStorage.removeItem('customer_name')
@@ -62,7 +83,7 @@ export function useShop() {
       }
     }
   }
-  const activeTicket = computed(() => tickets.value.find(t => !['collected', 'rejected'].includes(t.status)))
+  const activeTicket = computed(() => tickets.value.find(t => (!demo || t.phone === customerPhone.value) && !['collected', 'rejected'].includes(t.status)))
   const amount = computed(() => total(cart.value, catalog.value))
-  return { demo, week, days, varieties, varietyId, variety, available, syncDemoCalendar, cart, drops, selected, tickets, customerToken, customerName, checkoutOpen, toast, activeTicket, amount, queue, change, notify, persist, load, refreshDrops, refreshTickets, get products() { return catalog.value } }
+  return { demo, week, days, varieties, varietyId, variety, available, syncDemoCalendar, cart, drops, selected, tickets, customerToken, customerName, customerPhone, checkoutOpen, checkoutDraft, toast, activeTicket, amount, change, notify, persist, load, refreshDrops, refreshTickets, get products() { return catalog.value } }
 }

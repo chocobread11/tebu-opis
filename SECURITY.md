@@ -21,6 +21,7 @@ Please **do not open a public issue** for security problems.
 | --- | --- |
 | Validation | Every mutating endpoint parses its body with strict Zod schemas |
 | Tokens | Customer access tokens are 256-bit random values, stored only as SHA-256 digests |
+| History | Phone-only lookup when unprotected; optional salted scrypt password; 24-hour sessions; protection changes revoke previous sessions |
 | Admin | Authorization requires `NUXT_ADMIN_KEY`; comparisons use `timingSafeEqual` and fail closed |
 | Capability links | Pickup tickets (`/drop?t=…`) act as bearer capability URLs — do not share them |
 | Rate limiting | 120 requests/minute per client IP with per-endpoint body-size limits |

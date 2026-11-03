@@ -1,5 +1,4 @@
-import { mkdir, writeFile, unlink } from 'node:fs/promises'
-import { resolve, join } from 'node:path'
+import { createMediaStorage, MediaStorageConfigurationError } from '../storage/media'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 export default defineEventHandler(async event => {
@@ -23,9 +22,16 @@ export default defineEventHandler(async event => {
   let bytes: Buffer
   try { bytes = await sharp(file.data, { limitInputPixels: 12_000_000 }).rotate().webp({ quality: 85 }).toBuffer(); if (bytes.length >= (admin ? 250000 : 80000)) throw new Error('size') }
   catch { throw createError({ statusCode: 400, message: 'Image verification failed. Try a smaller screenshot.' }) }
-  const id = randomUUID(); const filename = `${id}.webp`
-  const directory = resolve(useRuntimeConfig().uploadDir)
-  await mkdir(directory, { recursive: true, mode: 0o700 }); await writeFile(join(directory, filename), bytes, { mode: 0o600, flag: 'wx' })
-  try { await db().media.create({ data: { id, filename, kind: admin ? 'freezer' : 'receipt', orderId, scheduleId } }) } catch (error) { await unlink(join(directory, filename)); throw error }
+  const id = randomUUID()
+  const storage = createMediaStorage(useRuntimeConfig())
+  let filename: string
+  try { filename = await storage.write(`${id}.webp`, bytes) }
+  catch (error) {
+    storage.close()
+    throw createError({ statusCode: 503, message: error instanceof MediaStorageConfigurationError ? error.message : 'Upload storage is unavailable. Please try again.' })
+  }
+  try { await db().media.create({ data: { id, filename, kind: admin ? 'freezer' : 'receipt', orderId, scheduleId } }) }
+  catch (error) { await storage.remove(filename).catch(() => {}); throw error }
+  finally { storage.close() }
   return { id, url: admin ? `/api/media/${id}` : undefined }
 })

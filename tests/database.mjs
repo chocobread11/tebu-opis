@@ -19,7 +19,7 @@ const uploads = await mkdtemp(join(tmpdir(), 'tebu-api-'))
 const adminKey = randomBytes(32).toString('hex')
 const port = process.env.TEBU_DATABASE_TEST_PORT || '3041'
 const base = `http://127.0.0.1:${port}`
-const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: adminKey, NUXT_UPLOAD_DIR: uploads, NUXT_PUBLIC_DEMO: 'false', NUXT_PUBLIC_DUITNOW_QR: '/favicon.svg', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
+const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: adminKey, NUXT_UPLOAD_DIR: uploads, NUXT_UPLOAD_STORAGE: 'local', NUXT_PUBLIC_DEMO: 'false', NUXT_PUBLIC_DUITNOW_QR: '/favicon.svg', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
 let server, browser, debugPage, created = false
 let serverOutput = ''
 const run = args => {
@@ -107,7 +107,12 @@ try {
   const receipt = await upload.json()
   assert.equal((await fetch(`${base}/api/media/${receipt.id}`)).status, 401)
   assert.equal((await request(`/api/orders/${order.data.token}`, { method: 'PATCH', token: customerToken, body: { action: 'receipt', receiptId: receipt.id } })).data.status, 'pending_review')
-  for (const action of ['approve', 'pack']) assert.equal((await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action, orderToken: order.data.token } })).status, 200)
+  assert.equal((await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'approve', orderToken: order.data.token } })).status, 200)
+  for (const packed of [true, true, false, false, true]) {
+    const result = await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'pack', packed, orderToken: order.data.token } })
+    assert.equal(result.status, 200); assert.equal(result.data.order.packed, packed)
+    assert.equal((await request(`/api/orders/${order.data.token}`)).data.packed, packed, 'Customer ticket reflects the explicit packed state')
+  }
   const past = (await database.query('SELECT id, photo_id FROM schedules WHERE dropped_at IS NOT NULL LIMIT 1')).rows[0]
   await database.query('UPDATE orders SET schedule_id = $1, sequence = 99 WHERE token = $2', [past.id, order.data.token])
   assert.equal((await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'drop', scheduleId: past.id, photoId: past.photo_id } })).status, 200)
@@ -149,7 +154,7 @@ try {
   assert.equal((await request('/api/admin/logs/harvests', { method: 'POST', token: adminKey, body: { date: '2026-11-01', varietyId: 'tebu-1', quantity: 1, flaskQty: 1.5, jugQty: 0 } })).status, 400)
 
   // Close days at the API, including a pending receipt; seed must not reopen them.
-  const closeDate = catalog.data.drops[2].id
+  const closeDate = catalog.data.drops.find(drop => drop.id !== lastDrop).id
   const pending = await request('/api/orders', { method: 'POST', token: customerToken, body: { ...orderBody, scheduleId: closeDate, requestId: randomUUID() } })
   assert.equal(pending.status, 200)
   const closeForm = new FormData()
@@ -167,7 +172,7 @@ try {
   assert.equal(closedCatalog.days.some(row => row.closedReason), false, 'Medical/leave reasons remain private')
   run(['prisma', 'db', 'seed', '--', '--schedules-only'])
   assert.equal((await request('/api/catalog')).data.days.some(row => row.id === closeDate), false)
-  const removeDate = catalog.data.drops[3].id
+  const removeDate = lastDrop
   assert.equal((await request(`/api/admin/schedules/${removeDate}`, { method: 'DELETE', token: adminKey })).status, 200)
   run(['prisma', 'db', 'seed', '--', '--schedules-only'])
   assert.equal((await request('/api/orders', { method: 'POST', token: customerToken, body: { ...orderBody, scheduleId: removeDate, requestId: randomUUID() } })).status, 409)
@@ -238,6 +243,34 @@ try {
   const todayOrder = await request('/api/admin/orders', { method: 'POST', token: adminKey, body: { ...manualBody, requestId: randomUUID(), scheduleId: checklistToday, name: 'Today packing customer', paymentStatus: 'paid' } })
   assert.equal(todayOrder.status, 200)
 
+  // Phone lookup follows the customer’s optional history-password preference.
+  const privacyPhone = '0129990099'
+  const privacy = await request('/api/identity', { method: 'POST', body: { phone: privacyPhone, name: 'Privacy Customer' } })
+  assert.equal(privacy.status, 200)
+  const openLookup = await request('/api/identity', { method: 'POST', body: { phone: privacyPhone, mode: 'history' } })
+  assert.equal(openLookup.data.protected, false)
+  assert.equal((await request('/api/orders', { token: openLookup.data.token })).status, 200)
+  const secured = await request('/api/identity/password', { method: 'PUT', token: privacy.data.token, body: { password: 'history-pass-123' } })
+  assert.equal(secured.status, 200); assert.equal(secured.data.protected, true)
+  assert.equal((await request('/api/orders', { token: openLookup.data.token })).status, 401, 'Enabling protection revokes previous sessions')
+  const challenge = await request('/api/identity', { method: 'POST', token: secured.data.token, body: { phone: privacyPhone, mode: 'history' } })
+  assert.equal(challenge.data.passwordRequired, true); assert.equal(challenge.data.token, undefined)
+  assert.equal((await request('/api/identity', { method: 'POST', body: { phone: privacyPhone, mode: 'history', password: 'wrong-password' } })).status, 403)
+  const unlocked = await request('/api/identity', { method: 'POST', body: { phone: privacyPhone, mode: 'history', password: 'history-pass-123' } })
+  assert.equal(unlocked.status, 200); assert.equal((await request('/api/orders', { token: unlocked.data.token })).status, 200)
+  const storedHash = (await database.query('SELECT password_hash FROM customers WHERE phone = $1', ['60129990099'])).rows[0].password_hash
+  assert.ok(storedHash.startsWith('scrypt:')); assert.ok(!storedHash.includes('history-pass-123'))
+  await database.query(`UPDATE customer_sessions SET expires_at = now() - interval '1 minute' WHERE token_hash = $1`, [createHash('sha256').update(unlocked.data.token).digest('hex')])
+  assert.equal((await request('/api/orders', { token: unlocked.data.token })).status, 401, 'Expired sessions cannot view history')
+  assert.equal((await request('/api/identity/password', { method: 'PUT', token: secured.data.token, body: { password: null, currentPassword: 'wrong-password' } })).status, 403)
+  const removed = await request('/api/identity/password', { method: 'PUT', token: secured.data.token, body: { password: null, currentPassword: 'history-pass-123' } })
+  assert.equal(removed.status, 200); assert.equal(removed.data.protected, false)
+  const publicAgain = await request('/api/identity', { method: 'POST', body: { phone: privacyPhone, mode: 'history' } })
+  assert.ok(publicAgain.data.token)
+  const unknown = await request('/api/identity', { method: 'POST', body: { phone: '0129990098', mode: 'history' } })
+  assert.equal(unknown.data.found, false)
+  console.log('PASS: phone lookup, optional hashed passwords, password challenge and rejection, session revocation and expiry, password removal and unknown numbers.')
+
   browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const page = await context.newPage()
@@ -302,15 +335,22 @@ try {
   await page.getByLabel('Payment status', { exact: true }).selectOption('paid')
   await page.getByRole('button', { name: 'Save order', exact: true }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
-  const manualCard = page.locator('.manual-orders .review-card').filter({ hasText: 'Browser offline sale' })
+  const manualCard = page.locator('.admin-transaction-history tbody tr').filter({ hasText: 'Browser offline sale' })
   await manualCard.waitFor()
   const savedManual = (await database.query("SELECT manual_payment_status, total FROM orders WHERE customer_name = 'Browser offline sale'")).rows[0]
   assert.equal(savedManual.manual_payment_status, 'paid'); assert.equal(savedManual.total, 600)
-  await manualCard.getByRole('button', { name: 'Mark unpaid', exact: true }).click()
-  await manualCard.getByRole('button', { name: 'Mark paid', exact: true }).waitFor()
-  await manualCard.getByRole('button', { name: 'Cancel order', exact: true }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel order', exact: true }).click()
-  await manualCard.getByText('Cancelled', { exact: true }).waitFor()
+  await manualCard.getByRole('button', { name: /^Actions for/ }).click()
+  await page.getByRole('menuitem', { name: /^Edit transaction/ }).click()
+  await page.getByRole('dialog').getByLabel('Manual payment', { exact: true }).selectOption('unpaid')
+  await page.getByRole('dialog').getByRole('button', { name: 'Save changes', exact: true }).click()
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  await manualCard.getByText('Manual · unpaid', { exact: true }).waitFor()
+  await manualCard.getByRole('button', { name: /^Actions for/ }).click()
+  await page.getByRole('menuitem', { name: /^Edit transaction/ }).click()
+  await page.getByRole('dialog').getByLabel('Order status', { exact: true }).selectOption('rejected')
+  await page.getByRole('dialog').getByRole('button', { name: 'Save changes', exact: true }).click()
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  await manualCard.getByText('Payment needs attention', { exact: true }).waitFor()
   await page.screenshot({ path: 'test-results/tebu-manual-orders.png', fullPage: true })
   await page.getByRole('link', { name: 'Checklist', exact: true }).click()
   await page.locator('.checklist-day').waitFor()
@@ -321,9 +361,10 @@ try {
   await todayBag.waitFor()
   assert.equal(await page.locator('.packing-row').filter({ hasText: 'Browser offline sale' }).count(), 0)
   await todayBag.getByRole('checkbox').check()
+  await page.waitForFunction(token => JSON.stringify(document.querySelector(`.packing-row[data-token="${token}"]`)?.textContent).includes('Packed'), todayOrder.data.token)
   await page.getByRole('button', { name: '2. Pantry drop', exact: true }).click()
-  await page.locator('.collection-row').filter({ hasText: 'Today packing customer' }).waitFor()
-  assert.equal(await page.locator('.collection-row').filter({ hasText: 'Browser offline sale' }).count(), 0)
+  await page.locator('.collection-transactions .collection-row').filter({ hasText: 'Today packing customer' }).waitFor()
+  assert.equal(await page.locator('.collection-transactions .collection-row').filter({ hasText: 'Browser offline sale' }).count(), 0)
   assert.equal((await database.query('SELECT packed FROM orders WHERE token = $1', [todayOrder.data.token])).rows[0].packed, true)
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })

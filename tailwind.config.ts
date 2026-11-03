@@ -1,1 +1,17 @@
-export default { content: ['./components/**/*.vue', './pages/**/*.vue', './app.vue'], theme: { extend: { colors: { cane: '#c8ee71', ink: '#24342c', cream: '#f8f9f3', input: '#7f9276', ring: '#477039', background: '#ffffff', foreground: '#26392c', muted: { DEFAULT: '#f0f3e9', foreground: '#53634e' }, destructive: '#8b382b' }, fontFamily: { sans: ['Arial', 'Helvetica', 'sans-serif'] } } } }
+const token = (name: string) => `var(--${name})`
+export default {
+  content: ['./components/**/*.vue', './pages/**/*.vue', './app.vue'],
+  theme: { extend: {
+    colors: {
+      border: token('border'), input: token('input'), ring: token('ring'),
+      background: token('background'), foreground: token('foreground'),
+      primary: { DEFAULT: token('primary'), foreground: token('primary-foreground') },
+      secondary: { DEFAULT: token('secondary'), foreground: token('secondary-foreground') },
+      muted: { DEFAULT: token('muted'), foreground: token('muted-foreground') },
+      accent: { DEFAULT: token('accent'), foreground: token('accent-foreground') },
+      destructive: token('destructive'),
+    },
+    fontFamily: { sans: ['Inter Variable', 'sans-serif'] },
+    borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
+  } },
+}

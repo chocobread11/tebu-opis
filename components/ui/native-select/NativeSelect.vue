@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown } from '~/lib/icons'
 import { cn } from '~/lib/utils'
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ class?: HTMLAttributes['class'] }>()

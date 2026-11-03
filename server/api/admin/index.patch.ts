@@ -1,6 +1,9 @@
 import { z } from 'zod'
 const input = z.discriminatedUnion('action', [
-  z.object({ action: z.enum(['approve', 'reject', 'pack', 'notify']), orderToken: z.string() }),
+  z.object({ action: z.literal('approve'), orderToken: z.string() }),
+  z.object({ action: z.literal('reject'), orderToken: z.string() }),
+  z.object({ action: z.literal('notify'), orderToken: z.string(), notified: z.boolean().optional() }),
+  z.object({ action: z.literal('pack'), orderToken: z.string(), packed: z.boolean().optional() }),
   z.object({ action: z.literal('manual-payment'), orderToken: z.string(), paymentStatus: z.enum(['paid', 'unpaid']) }),
   z.object({ action: z.literal('cancel-manual'), orderToken: z.string() }),
   z.object({ action: z.literal('drop'), scheduleId: z.string(), photoId: z.uuid() }),
@@ -29,10 +32,15 @@ export default defineEventHandler(async event => {
     if (!updated.count) throw createError({ statusCode: 409, message: 'This manual order is cancelled or no longer available.' })
     return { ok: true }
   }
-  const allowed = { approve: 'pending_review', reject: 'pending_review', pack: 'confirmed', notify: 'ready' } as const
+  if (data.action === 'notify') {
+    const updated = await db().order.updateMany({ where: { id: order.id, status: { in: ['confirmed', 'ready', 'collected'] } }, data: { notified: data.notified ?? true } })
+    if (!updated.count) throw createError({ statusCode: 409, message: 'This order is no longer in the drop checklist. Refresh and try again.' })
+    return { ok: true, order: await toTicket(await db().order.findUniqueOrThrow({ where: { id: order.id } }), true) }
+  }
+  const allowed = { approve: 'pending_review', reject: 'pending_review', pack: 'confirmed' } as const
   const expected = allowed[data.action]
-  const changes = data.action === 'approve' ? { status: 'confirmed' as const } : data.action === 'reject' ? { status: 'rejected' as const } : data.action === 'pack' ? { packed: !order.packed } : { notified: true }
+  const changes = data.action === 'approve' ? { status: 'confirmed' as const } : data.action === 'reject' ? { status: 'rejected' as const } : { packed: data.packed ?? !order.packed }
   const updated = await db().order.updateMany({ data: changes, where: { id: order.id, status: expected } })
   if (!updated.count) throw createError({ statusCode: 409, message: 'The order status changed. Refresh and try again.' })
-  return { ok: true }
+  return { ok: true, order: await toTicket(await db().order.findUniqueOrThrow({ where: { id: order.id } }), true) }
 })

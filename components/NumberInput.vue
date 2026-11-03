@@ -10,7 +10,7 @@ function update(value: number | null | undefined) { model.value = typeof value !
   <NumberField :id="id" :model-value="model" :min="min" :max="max" :step="step" :required="required" :disabled="disabled" :format-options="format" locale="en-MY" disable-wheel-change @update:model-value="update">
     <NumberFieldContent>
       <NumberFieldDecrement :aria-label="`Decrease ${label}`" />
-      <NumberFieldInput v-bind="$attrs" :placeholder="placeholder" :required="required" />
+      <NumberFieldInput v-bind="$attrs" :placeholder="placeholder" :required="required" inputmode="none" autocomplete="off" />
       <NumberFieldIncrement :aria-label="`Increase ${label}`" />
     </NumberFieldContent>
   </NumberField>

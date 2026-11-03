@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight } from '~/lib/icons'
 import { malaysiaToday, monthDays, type CalendarDay } from '~/shared/domain'
 const props = defineProps<{ modelValue: string; month: string; days: CalendarDay[]; admin?: boolean; loading?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; 'update:month': [value: string] }>()

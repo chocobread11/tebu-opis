@@ -96,3 +96,17 @@ export function publicDeliveryDays(days: CalendarDay[], week: ActiveWeek, now = 
   const today = malaysiaToday(now)
   return days.filter(day => day.id >= week.start && day.id <= week.end && day.id > today && isOfficeWeekday(day.id) && day.open && !day.removedAt && !day.droppedAt).sort((a, b) => a.id.localeCompare(b.id))
 }
+
+/** Packing is a separate field from payment/drop status. Use it in every customer status view. */
+export function ticketStatusLabel(ticket: Pick<Ticket, 'status' | 'packed'>) {
+  if (ticket.status === 'confirmed' && ticket.packed) return 'Packed — awaiting pantry drop'
+  return { pending_payment: 'Awaiting receipt', pending_review: 'Receipt under review', confirmed: 'Payment confirmed', ready: 'Ready for pickup', collected: 'Collected — thank you', rejected: 'Payment needs attention' }[ticket.status]
+}
+export function ticketWhatsAppUrl(ticket: Pick<Ticket, 'phone' | 'token' | 'name' | 'tag'>, origin: string) {
+  const phone = ticket.phone.replace(/\D/g, '')
+  if (!/^60\d{8,11}$/.test(phone)) return ''
+  const url = new URL('/drop', origin)
+  url.searchParams.set('t', ticket.token)
+  const message = `Hi ${ticket.name}! Here is your Tebu Drop ticket ${ticket.tag}. Check packing, pantry drop and collection status here: ${url.toString()}`
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+}

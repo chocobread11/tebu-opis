@@ -13,7 +13,7 @@ function update(value: number | null | undefined) {
   <NumberField :class="['quantity-control', { 'has-quantity': quantity > 0, 'quantity-compact': compact }]" :aria-label="`${label} quantity`" :model-value="quantity" :min="0" :max="Math.min(10, max ?? 10)" :step="1" :format-options="{ useGrouping: false }" locale="en-MY" disable-wheel-change @update:model-value="update">
     <NumberFieldContent>
       <NumberFieldDecrement class="quantity-decrease" :aria-label="removeLabel" />
-      <NumberFieldInput class="quantity-value" :aria-label="`${label} quantity`" />
+      <NumberFieldInput class="quantity-value" :aria-label="`${label} quantity`" inputmode="none" autocomplete="off" />
       <NumberFieldIncrement class="quantity-increase" :aria-label="addLabel" />
     </NumberFieldContent>
   </NumberField>
