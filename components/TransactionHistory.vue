@@ -42,8 +42,19 @@ async function saveProtection(remove = false) {
   } catch (e: any) { error.value = e.data?.message || e.message || 'Could not change protection.' }
   finally { busy.value = false }
 }
+async function lockHistory() {
+  busy.value = true; error.value = ''
+  try { await access.signOut(); resetSearch(); searched.value = true; passwordRequired.value = access.protectedHistory.value }
+  catch { error.value = 'Could not lock your history. Please try again.' }
+  finally { busy.value = false }
+}
 async function refreshStatus() {
   if (!unlocked.value || busy.value || refreshing || document.hidden) return
+  if (shop.demo && access.demoSession()?.phone !== shop.customerPhone.value) {
+    unlocked.value = false; passwordRequired.value = access.protectedHistory.value
+    error.value = 'Your session expired. Look up your transactions again.'
+    return
+  }
   refreshing = true
   try { await shop.refreshTickets() }
   catch (e: any) {
@@ -72,14 +83,14 @@ onBeforeUnmount(() => {
       <div v-if="passwordRequired"><label class="field-label" for="history-password">History password</label><input id="history-password" ref="passwordInput" v-model="password" class="input" type="password" autocomplete="current-password" maxlength="128" required :aria-invalid="!!error" :aria-describedby="error ? 'history-error' : undefined" /></div>
       <button class="primary" :disabled="busy">{{ busy ? 'Loading…' : passwordRequired ? 'Unlock transactions' : 'View transactions' }}</button>
     </form>
-    <p id="history-help" class="helper">Your phone number is remembered on this device. Protected histories require a password.</p>
+    <p id="history-help" class="helper">Your phone number is remembered. After unlocking, your history stays signed in for 30 minutes on this device. Your password is never saved.</p>
     <p v-if="error" id="history-error" class="error" role="alert">{{ error }}</p>
     <p v-if="passwordRequired && !unlocked" class="helper">This phone number has password protection. Enter its history password to continue.</p>
     <template v-if="unlocked">
-      <div class="section-heading"><h2>{{ shop.customerName.value }}’s transactions</h2><span class="subtle">{{ history.length }} transaction{{ history.length === 1 ? '' : 's' }}</span></div>
+      <div class="section-heading"><div><h2>{{ shop.customerName.value }}’s transactions</h2><span class="subtle">{{ history.length }} transaction{{ history.length === 1 ? '' : 's' }}</span></div><button type="button" class="secondary small-action" :disabled="busy" @click="lockHistory">Lock history</button></div>
       <div class="log-table-card transaction-table">
         <table class="log-table"><caption class="sr-only">Past transactions for {{ shop.customerPhone.value }}</caption><thead><tr><th scope="col">Order / drop date</th><th scope="col">Items</th><th scope="col">Total</th><th scope="col">Status</th><th scope="col">Receipt</th></tr></thead>
-          <tbody><tr v-for="order in history" :key="order.token"><td><strong>{{ order.tag }}</strong><span class="table-note">{{ dateLabel(order.scheduleId) }}</span></td><td>{{ bottleCount(order.cart) }} bottle{{ bottleCount(order.cart) === 1 ? '' : 's' }}<span class="table-note">{{ order.varietyName }}</span></td><td class="history-total">{{ money(order.total) }}</td><td><span :class="['transaction-status', order.status]">{{ ticketStatusLabel(order) }}</span></td><td><NuxtLink :to="`/drop?t=${order.token}`" class="text-button" :aria-label="`View receipt ${order.tag}`">View<span class="history-receipt-label"> receipt</span></NuxtLink></td></tr>
+          <tbody><tr v-for="order in history" :key="order.token"><td><strong>{{ order.tag }}</strong><span class="table-note">{{ dateLabel(order.scheduleId) }}</span></td><td>{{ bottleCount(order.cart) }} bottle{{ bottleCount(order.cart) === 1 ? '' : 's' }}<span class="table-note">{{ order.varietyName }}</span><OrderRemarks :value="order.remarks" compact preview /></td><td class="history-total">{{ money(order.total) }}</td><td><span :class="['transaction-status', order.status]">{{ ticketStatusLabel(order) }}</span></td><td><NuxtLink :to="`/drop?t=${order.token}`" class="text-button" :aria-label="`View receipt ${order.tag}`">View<span class="history-receipt-label"> receipt</span></NuxtLink></td></tr>
           <tr v-if="!history.length"><td colspan="5" class="table-empty"><strong>No transactions yet.</strong><span>Completed checkout orders will appear here.</span></td></tr></tbody>
         </table>
       </div>

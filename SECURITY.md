@@ -21,15 +21,15 @@ Please **do not open a public issue** for security problems.
 | --- | --- |
 | Validation | Every mutating endpoint parses its body with strict Zod schemas |
 | Tokens | Customer access tokens are 256-bit random values, stored only as SHA-256 digests |
-| History | Phone-only lookup when unprotected; optional salted scrypt password; 24-hour sessions; protection changes revoke previous sessions |
+| History | Phone-only lookup when unprotected; optional salted scrypt password; fixed 30-minute HttpOnly/SameSite cookie sessions (Secure on HTTPS); lock history revokes the current session and protection changes revoke all sessions |
 | Admin | Authorization requires `NUXT_ADMIN_KEY`; comparisons use `timingSafeEqual` and fail closed |
 | Capability links | Pickup tickets (`/drop?t=…`) act as bearer capability URLs — do not share them |
 | Rate limiting | 120 requests/minute per client IP with per-endpoint body-size limits |
-| Uploads | Client-encoded WebP re-validated server-side with sharp, stored under random names outside the web root with metadata stripped |
+| Uploads | JPG, PNG and WebP verified and re-encoded as WebP server-side with sharp, capped below 250 KB and stored under random names with metadata stripped |
 | Headers | `nosniff`, `no-referrer`, `DENY` framing, restrictive `Permissions-Policy`, `Cache-Control: no-store` on all API responses |
 
-Known trade-offs (documented in the README) include localStorage-held customer
-tokens, trust of `X-Forwarded-For` behind your reverse proxy, and no built-in
+Known trade-offs (documented in the README) include bearer capability ticket
+links, trust of `X-Forwarded-For` behind your reverse proxy, and no built-in
 phone-ownership verification. Review the *Security* section of the README before
 deploying to production.
 

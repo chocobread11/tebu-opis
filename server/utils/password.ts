@@ -1,6 +1,7 @@
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import type { H3Event } from 'h3'
+import { customerSessionLifetime } from '../../shared/session'
 const derive = promisify(scrypt)
 export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString('hex')
@@ -28,7 +29,8 @@ export function limitPasswordAttempts(event: H3Event, phone: string) {
 }
 export async function issueCustomerSession(customerId: string) {
   const token = newToken()
+  const expiresAt = new Date(Date.now() + customerSessionLifetime)
   await db().customerSession.deleteMany({ where: { customerId, expiresAt: { lt: new Date() } } })
-  await db().customerSession.create({ data: { customerId, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + 24 * 60 * 60_000) } })
-  return token
+  await db().customerSession.create({ data: { customerId, tokenHash: hashToken(token), expiresAt } })
+  return { token, expiresAt }
 }

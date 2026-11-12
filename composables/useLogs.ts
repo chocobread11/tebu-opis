@@ -1,3 +1,4 @@
+import { migrateStoredHarvest } from '~/shared/legacy-products'
 import type { Expense, Harvest, LogData } from '~/shared/domain'
 export type { Expense, Harvest } from '~/shared/domain'
 
@@ -23,7 +24,7 @@ export function useLogs() {
       if (admin.local) {
         const saved = JSON.parse(localStorage.getItem('tebu_logs') || '{"expenses":[],"harvests":[]}')
         expenses.value = Array.isArray(saved.expenses) ? saved.expenses : []
-        harvests.value = Array.isArray(saved.harvests) ? saved.harvests : []
+        harvests.value = Array.isArray(saved.harvests) ? saved.harvests.map(migrateStoredHarvest) : []
       } else {
         const data = await $fetch<LogData>('/api/admin/logs', { headers: admin.headers.value })
         expenses.value = data.expenses; harvests.value = data.harvests
@@ -52,7 +53,7 @@ export function useLogs() {
         expenses.value = nextExpenses; harvests.value = nextHarvests
       } else {
         const { id, ...recordBody } = record
-        const body = kind === 'harvests' ? { date: (record as Harvest).date, quantity: (record as Harvest).quantity, varietyId: (record as Harvest).varietyId, flaskQty: (record as Harvest).flaskQty, jugQty: (record as Harvest).jugQty } : recordBody
+        const body = kind === 'harvests' ? { date: (record as Harvest).date, quantity: (record as Harvest).quantity, varietyId: (record as Harvest).varietyId, kecikQty: (record as Harvest).kecikQty, besarQty: (record as Harvest).besarQty } : recordBody
         const path = `/api/admin/logs/${kind}${editing ? `/${id}` : ''}`
         const saved = await $fetch<Expense | Harvest>(path, { method: editing ? 'PATCH' : 'POST', body, headers: admin.headers.value })
         if (kind === 'expenses') expenses.value = editing ? expenses.value.map(row => row.id === saved.id ? saved as Expense : row) : [...expenses.value, saved as Expense]
@@ -76,7 +77,7 @@ export function useLogs() {
   async function importBrowserLogs() {
     return mutate(async () => {
       const saved = JSON.parse(localStorage.getItem('tebu_logs') || '{"expenses":[],"harvests":[]}')
-      await $fetch('/api/admin/logs/import', { method: 'POST', body: saved, headers: admin.headers.value })
+      await $fetch('/api/admin/logs/import', { method: 'POST', body: { ...saved, harvests: (saved.harvests || []).map(migrateStoredHarvest) }, headers: admin.headers.value })
       localStorage.setItem('tebu_logs_imported_backup', JSON.stringify(saved))
       localStorage.removeItem('tebu_logs')
       browserLogsAvailable.value = false

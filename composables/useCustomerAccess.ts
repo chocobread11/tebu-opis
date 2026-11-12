@@ -1,5 +1,6 @@
 import { normalizePhone } from '~/shared/domain'
-type Identity = { found: boolean; passwordRequired: boolean; token?: string; name?: string; phone?: string; protected?: boolean }
+import { customerSessionLifetime } from '~/shared/session'
+type Identity = { found: boolean; passwordRequired: boolean; token?: string; name?: string; phone?: string; protected?: boolean; expiresAt?: string }
 type DemoCustomer = { name: string; token: string; salt?: string; passwordHash?: string }
 async function demoHash(password: string, salt: string) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
@@ -14,14 +15,33 @@ export function useCustomerAccess() {
     try { return JSON.parse(localStorage.getItem('tebu_demo_customers') || '{}') } catch { return {} }
   }
   function remember(result: Identity) {
-    shop.customerPhone.value = result.phone!; shop.customerName.value = result.name!; shop.customerToken.value = result.token!
-    localStorage.setItem('customer_phone', result.phone!); localStorage.setItem('customer_name', result.name!); localStorage.setItem('customer_token', result.token!)
+    shop.customerPhone.value = result.phone!; shop.customerName.value = result.name!; shop.customerToken.value = shop.demo ? result.token! : ''
+    localStorage.setItem('customer_phone', result.phone!); localStorage.setItem('customer_name', result.name!)
+    localStorage.removeItem('customer_token')
+    if (shop.demo) localStorage.setItem('tebu_demo_session', JSON.stringify({ phone: result.phone, token: result.token, expiresAt: result.expiresAt }))
     protectedHistory.value = !!result.protected
     unlockedPhone.value = result.phone!
+  }
+  function demoSession() {
+    try {
+      const session = JSON.parse(localStorage.getItem('tebu_demo_session') || 'null')
+      const record = session && demoCustomers()[session.phone]
+      return record && session.token === record.token && new Date(session.expiresAt).getTime() > Date.now() ? session as { phone: string; token: string; expiresAt: string } : null
+    } catch { return null }
+  }
+  async function lookup(value: string): Promise<Identity> {
+    const phone = normalizePhone(value)
+    if (!shop.demo) return $fetch<Identity>('/api/identity/lookup', { method: 'POST', body: { phone } })
+    const record = demoCustomers()[phone]
+    const previous = shop.tickets.value.find(ticket => ticket.phone === phone)
+    if (!record && !previous) return { found: false, passwordRequired: false }
+    if (record?.passwordHash && demoSession()?.phone !== phone) return { found: true, passwordRequired: true, protected: true }
+    return { found: true, passwordRequired: false, protected: !!record?.passwordHash, name: record?.name || previous?.name, phone }
   }
   async function identify(input: { phone: string; name?: string; password?: string; protectHistory?: boolean; mode: 'history' | 'checkout' }) {
     const phone = normalizePhone(input.phone)
     if (shop.customerPhone.value !== phone) {
+      if (shop.customerPhone.value) await signOut()
       shop.customerToken.value = ''; shop.customerName.value = ''; unlockedPhone.value = ''
       localStorage.removeItem('customer_token'); localStorage.removeItem('customer_name')
       if (!shop.demo) shop.tickets.value = []
@@ -37,18 +57,19 @@ export function useCustomerAccess() {
         record = { name: input.name || previous?.name || '', token: crypto.randomUUID() }
       }
       if (record.passwordHash) {
-        if (!input.password) return { found: true, passwordRequired: true }
-        if (await demoHash(input.password, record.salt!) !== record.passwordHash) throw new Error('Incorrect history password.')
+        const trusted = demoSession()?.phone === phone
+        if (!input.password && !trusted) return { found: true, passwordRequired: true }
+        if (input.password && await demoHash(input.password, record.salt!) !== record.passwordHash) throw new Error('Incorrect history password.')
       } else if (input.mode === 'checkout' && input.protectHistory) {
         if (!input.password || input.password.length < 8) throw new Error('Use a password with at least 8 characters.')
         record.salt = crypto.randomUUID(); record.passwordHash = await demoHash(input.password, record.salt)
       }
       records[phone] = record; localStorage.setItem('tebu_demo_customers', JSON.stringify(records))
-      result = { found: true, passwordRequired: false, token: record.token, name: record.name, phone, protected: !!record.passwordHash }
+      result = { found: true, passwordRequired: false, token: record.token, name: record.name, phone, protected: !!record.passwordHash, expiresAt: !input.password && demoSession()?.phone === phone ? demoSession()!.expiresAt : new Date(Date.now() + customerSessionLifetime).toISOString() }
     } else {
-      result = await $fetch<Identity>('/api/identity', { method: 'POST', body: { ...input, phone }, headers: shop.customerToken.value ? { Authorization: `Bearer ${shop.customerToken.value}` } : {} })
+      result = await $fetch<Identity>('/api/identity', { method: 'POST', body: { ...input, phone, cookieSession: true } })
     }
-    if (result.token) remember(result)
+    if (result.found && !result.passwordRequired && result.phone) remember(result)
     return result
   }
   async function setProtection(password: string | null, currentPassword?: string) {
@@ -59,12 +80,19 @@ export function useCustomerAccess() {
       if (record.passwordHash && (!currentPassword || await demoHash(currentPassword, record.salt!) !== record.passwordHash)) throw new Error('Enter your current password to change protection.')
       record.salt = password ? crypto.randomUUID() : undefined
       record.passwordHash = password ? await demoHash(password, record.salt!) : undefined
+      record.token = crypto.randomUUID()
       localStorage.setItem('tebu_demo_customers', JSON.stringify(records))
+      remember({ found: true, passwordRequired: false, name: record.name, phone: shop.customerPhone.value, token: record.token, protected: password !== null, expiresAt: new Date(Date.now() + customerSessionLifetime).toISOString() })
     } else {
-      const result = await $fetch<{ token: string }>('/api/identity/password', { method: 'PUT', body: { password, currentPassword }, headers: { Authorization: `Bearer ${shop.customerToken.value}` } })
-      shop.customerToken.value = result.token; localStorage.setItem('customer_token', result.token)
+      await $fetch('/api/identity/password', { method: 'PUT', body: { password, currentPassword, cookieSession: true } })
+      shop.customerToken.value = ''; localStorage.removeItem('customer_token')
     }
     protectedHistory.value = password !== null
   }
-  return { identify, protectedHistory, unlockedPhone, setProtection }
+  async function signOut() {
+    if (!shop.demo) await $fetch('/api/identity/logout', { method: 'POST', body: {} })
+    localStorage.removeItem('tebu_demo_session'); localStorage.removeItem('customer_token'); localStorage.removeItem('customer_name')
+    shop.customerToken.value = ''; shop.customerName.value = ''; shop.tickets.value = []; unlockedPhone.value = ''
+  }
+  return { identify, lookup, protectedHistory, unlockedPhone, setProtection, signOut, demoSession }
 }

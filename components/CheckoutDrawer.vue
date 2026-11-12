@@ -3,6 +3,7 @@ import { DrawerRoot, DrawerPortal, DrawerOverlay, DrawerContent, DrawerTitle, Dr
 import { X, ArrowLeft, ArrowRight, Copy, QrCode, UploadCloud, Check, LoaderCircle, ShieldCheck } from '~/lib/icons'
 import { normalizePhone, money, total, cartSummary, type Ticket } from '~/shared/domain'
 import { compressImage } from '~/utils/compress'
+import { orderRemarksMaxLength } from '~/shared/order'
 const shop = useShop()
 const config = useRuntimeConfig()
 const access = useCustomerAccess()
@@ -12,6 +13,14 @@ const password = ref('')
 const step = ref(1)
 const name = ref('')
 const phone = ref('')
+const remarks = ref('')
+const profileBusy = ref(false)
+const profileProtected = ref(false)
+const profileChecked = ref(false)
+const profileMessage = ref('')
+let profilePhone = ''
+let profileRequest = 0
+let profileTimer: ReturnType<typeof setTimeout> | undefined
 const busy = ref(false)
 const error = ref('')
 const draft = ref<Ticket | null>(null)
@@ -21,34 +30,96 @@ const submitted = ref(false)
 const sampleReceipt = ref(false)
 const drop = computed(() => shop.drops.value.find(d => d.id === shop.selected.value))
 watch(shop.checkoutOpen, open => {
-  if (!open) return
-  error.value = ''; name.value = shop.customerName.value; phone.value = shop.customerPhone.value; password.value = ''; passwordRequired.value = false
+  if (!open) { password.value = ''; return }
+  error.value = ''; name.value = ''; password.value = ''; passwordRequired.value = false; profileChecked.value = false
+  phone.value = shop.customerPhone.value
   if (shop.checkoutDraft.value) {
     draft.value = shop.checkoutDraft.value; shop.checkoutDraft.value = null
     step.value = 3; submitted.value = false; clearReceipt()
   } else if (submitted.value) {
-    step.value = 1; draft.value = null; submitted.value = false; protectHistory.value = false; clearReceipt()
+    step.value = 1; draft.value = null; submitted.value = false; protectHistory.value = false; remarks.value = ''; clearReceipt()
+  }
+})
+function currentPhone() { try { return normalizePhone(phone.value) } catch { return '' } }
+async function lookupProfile() {
+  const normalized = currentPhone()
+  if (!normalized || !shop.checkoutOpen.value || step.value !== 1 || profileChecked.value) return
+  const request = ++profileRequest
+  profileBusy.value = true; profileMessage.value = 'Checking saved profile…'
+  try {
+    const result = await access.lookup(normalized)
+    if (request !== profileRequest || normalized !== currentPhone()) return
+    profileProtected.value = !!result.protected
+    passwordRequired.value = result.passwordRequired; profileChecked.value = true
+    if (result.passwordRequired) name.value = ''
+    else if (result.name && !name.value.trim()) name.value = result.name
+    profileMessage.value = result.passwordRequired ? 'This number is password protected. Unlock your profile to fill your name.' : result.found ? 'Saved profile found. You can adjust the name for this bag.' : 'New number. Enter your name to save your profile.'
+  } catch { if (request === profileRequest) profileMessage.value = 'Could not check your saved profile. You can try again when continuing.' }
+  finally { if (request === profileRequest) profileBusy.value = false }
+}
+watch([phone, shop.checkoutOpen, step], () => {
+  clearTimeout(profileTimer); profileRequest++; profileBusy.value = false
+  if (!shop.checkoutOpen.value || step.value !== 1) return
+  const normalized = currentPhone()
+  if (normalized !== profilePhone) {
+    profilePhone = normalized; name.value = ''; password.value = ''; passwordRequired.value = false
+    profileProtected.value = false; profileChecked.value = false; protectHistory.value = false; profileMessage.value = ''; error.value = ''
+  }
+  if (normalized && !profileChecked.value) {
+    profileBusy.value = true; profileMessage.value = 'Checking saved profile…'
+    profileTimer = setTimeout(lookupProfile, 350)
   }
 })
 function clearReceipt() { if (preview.value) URL.revokeObjectURL(preview.value); preview.value = ''; receipt.value = null; sampleReceipt.value = false }
-onBeforeUnmount(clearReceipt)
+let receiptPoll: ReturnType<typeof setInterval> | undefined
+function finishReceipt(ticket: Ticket) {
+  draft.value = ticket
+  const saved = shop.tickets.value.find(row => row.token === ticket.token)
+  if (saved) Object.assign(saved, ticket)
+  else shop.tickets.value.unshift(ticket)
+  shop.cart.value = { kecik: 0, besar: 0, asam: 0, limau: 0 }
+  submitted.value = true; step.value = 4; error.value = ''; clearReceipt()
+}
+async function refreshReceipt() {
+  if (shop.demo || !shop.checkoutOpen.value || !draft.value || ![2, 3].includes(step.value) || busy.value || document.hidden) return
+  const token = draft.value.token
+  try {
+    const ticket = await $fetch<Ticket>(`/api/orders/${token}`)
+    if (draft.value?.token === token && ['pending_review', 'confirmed', 'ready', 'collected'].includes(ticket.status)) finishReceipt(ticket)
+  } catch { /* The next poll retries without interrupting checkout. */ }
+}
+onMounted(() => {
+  receiptPoll = setInterval(refreshReceipt, 5000)
+  document.addEventListener('visibilitychange', refreshReceipt)
+})
+onBeforeUnmount(() => { profileRequest++; clearTimeout(profileTimer); clearReceipt(); clearInterval(receiptPoll); document.removeEventListener('visibilitychange', refreshReceipt) })
 async function identify() {
+  if (busy.value || profileBusy.value) return
   error.value = ''; busy.value = true
   try {
+    await lookupProfile()
+    const normalized = normalizePhone(phone.value)
+    if (passwordRequired.value) {
+      const identity = await access.identify({ phone: normalized, password: password.value || undefined, mode: 'history' })
+      if (identity.passwordRequired) throw new Error('Enter your history password to unlock your profile.')
+      name.value = identity.name || ''; passwordRequired.value = false; profileProtected.value = !!identity.protected; password.value = ''
+      profileMessage.value = 'Profile unlocked. Your name is filled in.'
+      await nextTick(); document.getElementById('name')?.focus({ preventScroll: true })
+      return
+    }
     const chosenDate = shop.selected.value
     await shop.refreshDrops()
     if (chosenDate && chosenDate !== shop.selected.value) throw new Error('The ordering week or availability changed. Please choose your delivery date again.')
     if (!shop.selected.value || !shop.drops.value.some(day => day.id === shop.selected.value && day.remaining > 0)) throw new Error('Choose an open delivery date.')
     if (!shop.variety.value) throw new Error('Choose a tebu variety.')
-    const normalized = normalizePhone(phone.value)
     if (name.value.trim().length < 2 || name.value.trim().length > 60) throw new Error('Enter your name (2–60 characters).')
     if (!shop.demo && !config.public.duitnowQr) throw new Error('Ordering opens once the operator configures the DuitNow payment QR.')
     const identity = await access.identify({ phone: normalized, name: name.value.trim(), password: password.value || undefined, protectHistory: protectHistory.value, mode: 'checkout' })
-    if (identity.passwordRequired) { passwordRequired.value = true; error.value = 'Enter your history password to continue with this number.'; return }
+    if (identity.passwordRequired) { passwordRequired.value = true; profileProtected.value = true; name.value = ''; error.value = 'Enter your history password to continue with this number.'; return }
     if (shop.demo) {
-      draft.value = { token: crypto.randomUUID(), tag: `#D${String(shop.tickets.value.length + 1).padStart(2, '0')}`, name: name.value.trim(), phone: normalized, varietyId: shop.varietyId.value, varietyName: shop.variety.value?.name, cart: { ...shop.cart.value }, total: total(shop.cart.value), scheduleId: shop.selected.value, status: 'pending_payment', packed: false, notified: false, createdAt: new Date().toISOString() }
+      draft.value = { token: crypto.randomUUID(), tag: `#D${String(shop.tickets.value.length + 1).padStart(2, '0')}`, name: name.value.trim(), remarks: remarks.value.trim() || undefined, phone: normalized, varietyId: shop.varietyId.value, varietyName: shop.variety.value?.name, cart: { ...shop.cart.value }, total: total(shop.cart.value), scheduleId: shop.selected.value, status: 'pending_payment', packed: false, notified: false, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 20 * 60_000).toISOString() }
     } else {
-      draft.value = await $fetch<Ticket>('/api/orders', { method: 'POST', body: { cart: shop.cart.value, varietyId: shop.varietyId.value, scheduleId: shop.selected.value, requestId: crypto.randomUUID() }, headers: { Authorization: `Bearer ${identity.token}` } })
+      draft.value = await $fetch<Ticket>('/api/orders', { method: 'POST', body: { name: name.value.trim(), remarks: remarks.value.trim() || null, cart: shop.cart.value, varietyId: shop.varietyId.value, scheduleId: shop.selected.value, requestId: crypto.randomUUID() } })
     }
     if (!shop.tickets.value.some(ticket => ticket.token === draft.value!.token)) shop.tickets.value.unshift(draft.value!)
     shop.persist()
@@ -75,14 +146,14 @@ async function submit() {
       shop.persist()
     } else {
       const form = new FormData(); form.append('file', receipt.value!); form.append('orderToken', draft.value.token)
-      const uploaded = await $fetch<{ id: string }>('/api/uploads', { method: 'POST', body: form, headers: { Authorization: `Bearer ${shop.customerToken.value}` } })
-      const submittedTicket = await $fetch<Ticket>(`/api/orders/${draft.value.token}`, { method: 'PATCH', body: { action: 'receipt', receiptId: uploaded.id }, headers: { Authorization: `Bearer ${shop.customerToken.value}` } })
+      const uploaded = await $fetch<{ id: string }>('/api/uploads', { method: 'POST', body: form })
+      const submittedTicket = await $fetch<Ticket>(`/api/orders/${draft.value.token}`, { method: 'PATCH', body: { action: 'receipt', receiptId: uploaded.id } })
       draft.value = submittedTicket
       const saved = shop.tickets.value.find(ticket => ticket.token === submittedTicket.token)
       if (saved) Object.assign(saved, submittedTicket)
       else shop.tickets.value.unshift(submittedTicket)
     }
-    shop.cart.value = { flask: 0, jug: 0, asam: 0, limau: 0 }; submitted.value = true; step.value = 4
+    shop.cart.value = { kecik: 0, besar: 0, asam: 0, limau: 0 }; submitted.value = true; step.value = 4
   } catch (e: any) { error.value = e.data?.message || e.message || 'Upload failed. Your order is saved; try again.' } finally { busy.value = false }
 }
 async function copy(value: string) { try { await navigator.clipboard.writeText(value); shop.notify('Copied to clipboard.') } catch { shop.notify('Copy is unavailable. Select and copy the text.') } }
@@ -99,11 +170,13 @@ function viewTicket() { shop.checkoutOpen.value = false; navigateTo(`/drop?t=${d
       <div class="checkout-stage">
         <form v-if="step === 1" id="checkout-details" @submit.prevent="identify">
           <div class="order-summary"><strong>{{ drop?.full }} · From 9 AM</strong><span>{{ shop.variety.value?.name }} · {{ cartSummary(shop.cart.value, shop.products) }}</span><b>{{ money(shop.amount.value) }}</b></div>
-          <label class="field-label" for="phone">Malaysian mobile number</label><div class="phone-field"><span>MY +60</span><input id="phone" v-model="phone" :aria-invalid="!!error" :aria-describedby="error ? 'checkout-error' : undefined" autocomplete="tel" inputmode="tel" placeholder="12 345 6789" required maxlength="20"/></div>
-          <label class="field-label" for="name">What should we write on your bag?</label><input id="name" v-model="name" class="input" :aria-invalid="!!error" :aria-describedby="error ? 'checkout-error' : undefined" placeholder="Your first name" autocomplete="given-name" required minlength="2" maxlength="60"/>
-          <label v-if="!passwordRequired" class="history-protection-choice"><input v-model="protectHistory" type="checkbox" />Protect my past transactions with a password</label>
-          <template v-if="protectHistory || passwordRequired"><label class="field-label" for="checkout-password">{{ passwordRequired ? 'History password' : 'Create history password' }}</label><input id="checkout-password" v-model="password" class="input" type="password" :autocomplete="passwordRequired ? 'current-password' : 'new-password'" required minlength="8" maxlength="128" :aria-invalid="!!error" :aria-describedby="error ? 'checkout-error' : 'history-password-help'"/><p id="history-password-help" class="helper">Use at least 8 characters. Your password is never saved on this device.</p></template>
-          <p v-else class="helper">Without a password, anyone who knows your phone number can view your transactions.</p>
+          <label class="field-label" for="phone">Malaysian mobile number</label><div class="phone-field"><span>MY +60</span><input id="phone" :disabled="busy" v-model="phone" :aria-invalid="!!error" :aria-describedby="error ? 'checkout-error' : 'checkout-profile-status'" autocomplete="tel" inputmode="tel" placeholder="12 345 6789" required maxlength="20"/></div>
+          <p id="checkout-profile-status" class="helper" role="status">{{ profileMessage || 'Enter your number to find your saved profile.' }}</p>
+          <template v-if="!passwordRequired"><label class="field-label" for="name">What should we write on your bag?</label><input id="name" :disabled="busy" v-model="name" class="input" :aria-invalid="!!error" :aria-describedby="error ? 'checkout-error' : undefined" placeholder="Your first name" autocomplete="given-name" required minlength="2" maxlength="60"/></template>
+          <label v-if="!passwordRequired && !profileProtected" class="history-protection-choice"><input v-model="protectHistory" :disabled="busy" type="checkbox" />Protect my past transactions with a password</label>
+          <template v-if="protectHistory || passwordRequired"><label class="field-label" for="checkout-password">{{ passwordRequired ? 'History password' : 'Create history password' }}</label><input id="checkout-password" :disabled="busy" v-model="password" class="input" type="password" :autocomplete="passwordRequired ? 'current-password' : 'new-password'" required minlength="8" maxlength="128" :aria-invalid="!!error" :aria-describedby="error ? 'checkout-error' : 'history-password-help'"/><p id="history-password-help" class="helper">Use at least 8 characters. Your password is never saved on this device.</p></template>
+          <p v-else-if="!profileProtected" class="helper">Without a password, anyone who knows your phone number can view your transactions.</p>
+          <label class="field-label" for="checkout-remarks">Remarks (optional)</label><textarea id="checkout-remarks" :disabled="busy" v-model="remarks" class="input order-remarks-input" rows="3" :maxlength="orderRemarksMaxLength" placeholder="Anything we should know about your order?" aria-describedby="checkout-remarks-help" /><p id="checkout-remarks-help" class="helper">For this order only · Up to {{ orderRemarksMaxLength }} characters.</p>
         </form>
         <div v-else-if="step === 2" class="payment-card">
           <div class="duitnow-word">DuitNow <b>QR</b></div>
@@ -113,6 +186,7 @@ function viewTicket() { shop.checkoutOpen.value = false; navigateTo(`/drop?t=${d
           <button class="amount-copy" aria-label="Copy payment amount" @click="copy((draft!.total / 100).toFixed(2))">{{ money(draft!.total) }}<Copy aria-hidden="true" :size="16"/></button>
           <button class="reference-copy" @click="copy(draft!.tag)">Reference: <b>{{ draft!.tag }}</b><Copy aria-hidden="true" :size="13"/></button>
           <a v-if="!shop.demo" class="text-button" :href="config.public.duitnowQr" download="duitnow-qr.jpeg">Save QR image</a>
+          <OrderRemarks :value="draft?.remarks" />
           <p v-if="!shop.demo" class="helper">Check the recipient in your bank app. Your bottles are reserved for 20 minutes.</p>
         </div>
         <div v-else-if="step === 3">
@@ -121,11 +195,12 @@ function viewTicket() { shop.checkoutOpen.value = false; navigateTo(`/drop?t=${d
           <button v-if="shop.demo && !receipt" class="secondary full-width" @click="sampleReceipt = true">{{ sampleReceipt ? '✓ Sample receipt attached' : 'Use a sample receipt' }}</button>
           <p id="receipt-help" class="helper">{{ shop.demo ? 'Demo receipts remain on this device.' : 'Your receipt is private. Payment is confirmed after the operator checks it.' }}</p>
         </div>
-        <div v-else class="checkout-success"><span class="big-check"><Check aria-hidden="true" :size="28"/></span><div class="success-tag">{{ draft?.tag }}</div><p>{{ draft?.name }} · {{ money(draft?.total || 0) }}<br>Receipt received · Awaiting payment verification<br>Pickup: Level 7 pantry freezer</p></div>
+        <div v-else class="checkout-success"><span class="big-check"><Check aria-hidden="true" :size="28"/></span><div class="success-tag">{{ draft?.tag }}</div><p>{{ draft?.name }} · {{ money(draft?.total || 0) }}<br>Receipt received · Awaiting payment verification<br>Pickup: Level 7 pantry freezer</p><OrderRemarks :value="draft?.remarks" /></div>
+        <PhoneReceipt v-if="!shop.demo && draft && (step === 2 || step === 3)" :key="draft.token" :token="draft.token" />
       </div>
       <div class="checkout-actions">
         <p v-if="error" id="checkout-error" class="error" role="alert">{{ error }}</p>
-        <button v-if="step === 1" class="primary full-width" form="checkout-details" type="submit" :disabled="busy"><LoaderCircle v-if="busy" aria-hidden="true" class="spin" :size="16"/>Continue to payment<ArrowRight aria-hidden="true" :size="16"/></button>
+        <button v-if="step === 1" class="primary full-width" form="checkout-details" type="submit" :disabled="busy || profileBusy"><LoaderCircle v-if="busy" aria-hidden="true" class="spin" :size="16"/>{{ profileBusy ? 'Checking profile…' : passwordRequired ? 'Unlock profile' : 'Continue to payment' }}<ArrowRight aria-hidden="true" :size="16"/></button>
         <button v-else-if="step === 2" class="primary full-width" @click="step = 3">{{ shop.demo ? 'Continue demo' : 'I’ve paid — upload receipt' }}<ArrowRight aria-hidden="true" :size="16"/></button>
         <button v-else-if="step === 3" class="primary full-width" :disabled="busy || (!receipt && !sampleReceipt)" aria-describedby="receipt-help" @click="submit"><LoaderCircle v-if="busy" aria-hidden="true" class="spin" :size="16"/>Submit my receipt<ArrowRight aria-hidden="true" :size="16"/></button>
         <button v-else class="primary full-width" @click="viewTicket">View my pickup ticket<ArrowRight aria-hidden="true" :size="16"/></button>

@@ -10,11 +10,11 @@ export function isAdmin(event: H3Event) {
 }
 export function requireAdmin(event: H3Event) { if (!isAdmin(event)) throw createError({ statusCode: 401, message: 'A valid admin key is required.' }) }
 export async function requireCustomer(event: H3Event) {
-  const token = bearer(event)
+  const token = customerAccessToken(event)
   if (!token || token.length > 100) throw createError({ statusCode: 401, message: 'Your customer token is required.' })
   const digest = hashToken(token)
-  const session = await db().customerSession.findUnique({ where: { tokenHash: digest }, include: { customer: true } })
-  const customer = session && session.expiresAt > new Date() ? session.customer : await db().customer.findUnique({ where: { tokenHash: digest } })
+  const session = await findCustomerSession(event)
+  const customer = session?.customer ?? (bearer(event) ? await db().customer.findUnique({ where: { tokenHash: digest } }) : null)
   if (!customer) throw createError({ statusCode: 401, message: 'This customer token is no longer valid.' })
   return customer
 }

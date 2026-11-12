@@ -70,8 +70,8 @@ try {
       }
       await tx.expense.upsert({ where: { id: sampleId(600) }, update: {}, create: { id: sampleId(600), date: now, amount: 2450, note: 'Sample bottles and paper bags' } })
       await tx.expense.upsert({ where: { id: sampleId(601) }, update: {}, create: { id: sampleId(601), date: past, amount: 1200, note: 'Sample transport' } })
-      await tx.harvest.upsert({ where: { id: sampleId(700) }, update: {}, create: { id: sampleId(700), date: past, type: 'Tebu 1', varietyId: 'tebu-1', quantity: 25.5, flaskQty: 40, jugQty: 20 } })
-      await tx.harvest.upsert({ where: { id: sampleId(701) }, update: {}, create: { id: sampleId(701), date: past, type: 'Tebu 2', varietyId: 'tebu-2', quantity: 20, flaskQty: 30, jugQty: 15 } })
+      await tx.harvest.upsert({ where: { id: sampleId(700) }, update: {}, create: { id: sampleId(700), date: past, type: 'Tebu 1', varietyId: 'tebu-1', quantity: 25.5, kecikQty: 40, besarQty: 20 } })
+      await tx.harvest.upsert({ where: { id: sampleId(701) }, update: {}, create: { id: sampleId(701), date: past, type: 'Tebu 2', varietyId: 'tebu-2', quantity: 20, kecikQty: 30, besarQty: 15 } })
     }, { timeout: 30_000 })
     console.log('Sample data ready: products, 4 customers, 8 orders, 2 expenses, 2 harvests, receipt/freezer images. Existing records are preserved.')
     console.log('Local customer bearer tokens:')

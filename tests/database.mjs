@@ -19,7 +19,7 @@ const uploads = await mkdtemp(join(tmpdir(), 'tebu-api-'))
 const adminKey = randomBytes(32).toString('hex')
 const port = process.env.TEBU_DATABASE_TEST_PORT || '3041'
 const base = `http://127.0.0.1:${port}`
-const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: adminKey, NUXT_UPLOAD_DIR: uploads, NUXT_UPLOAD_STORAGE: 'local', NUXT_PUBLIC_DEMO: 'false', NUXT_PUBLIC_DUITNOW_QR: '/favicon.svg', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
+const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: adminKey, NUXT_UPLOAD_DIR: uploads, NUXT_UPLOAD_STORAGE: 'local', NUXT_PUBLIC_DEMO: 'false', NUXT_PUBLIC_TESTING_CALENDAR: 'false', NUXT_PUBLIC_DUITNOW_QR: '/favicon.svg', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
 let server, browser, debugPage, created = false
 let serverOutput = ''
 const run = args => {
@@ -65,7 +65,7 @@ try {
 
   for (const [kind, record, changes] of [
     ['expenses', { date: '2026-11-01', amount: 1234, note: 'API test' }, { amount: 1500 }],
-    ['harvests', { date: '2026-11-01', quantity: 12.75, varietyId: 'tebu-1', flaskQty: 2, jugQty: 3 }, { quantity: 15.25 }],
+    ['harvests', { date: '2026-11-01', quantity: 12.75, varietyId: 'tebu-1', kecikQty: 2, besarQty: 3 }, { quantity: 15.25 }],
   ]) {
     const created = await request(`/api/admin/logs/${kind}`, { method: 'POST', token: adminKey, body: record })
     assert.equal(created.status, 200)
@@ -88,14 +88,14 @@ try {
   const identity = await request('/api/identity', { method: 'POST', body: { name: 'API Customer', phone: '0129990001' } })
   assert.equal(identity.status, 200)
   const customerToken = identity.data.token
-  await database.query("UPDATE products SET price = 725 WHERE id = 'flask'")
-  assert.equal((await request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId, varietyId: 'tebu-1', requestId: randomUUID(), cart: { flask: 0, jug: 4, asam: 0, limau: 0 } } })).status, 409, 'Public checkout enforces the daily big bottle limit')
-  const orderBody = { scheduleId, varietyId: 'tebu-1', requestId: randomUUID(), cart: { flask: 1, jug: 0, asam: 1, limau: 0 } }
+  await database.query("UPDATE products SET price = 725 WHERE id = 'kecik'")
+  assert.equal((await request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId, varietyId: 'tebu-1', requestId: randomUUID(), cart: { kecik: 0, besar: 7, asam: 0, limau: 0 } } })).status, 409, 'Public checkout enforces the shared daily box capacity')
+  const orderBody = { scheduleId, varietyId: 'tebu-1', requestId: randomUUID(), cart: { kecik: 1, besar: 0, asam: 1, limau: 0 } }
   const order = await request('/api/orders', { method: 'POST', token: customerToken, body: orderBody })
   assert.equal(order.status, 200); assert.equal(order.data.total, 825); assert.equal(order.data.items.length, 2)
   assert.equal((await request('/api/orders', { method: 'POST', token: customerToken, body: orderBody })).data.token, order.data.token)
-  await database.query("UPDATE products SET price = 600 WHERE id = 'flask'")
-  assert.equal((await request(`/api/orders/${order.data.token}`)).data.items.find(row => row.productId === 'flask').unitPrice, 725, 'Tickets retain checkout prices')
+  await database.query("UPDATE products SET price = 600 WHERE id = 'kecik'")
+  assert.equal((await request(`/api/orders/${order.data.token}`)).data.items.find(row => row.productId === 'kecik').unitPrice, 725, 'Tickets retain checkout prices')
   const history = await request('/api/orders', { token: customerToken })
   assert.equal(history.data.orders.length, 1)
   assert.equal((await request('/api/orders', { method: 'POST', token: token(sampleId(1)), body: orderBody })).status, 409)
@@ -123,7 +123,7 @@ try {
 
   const lastDrop = catalog.data.drops.at(-1).id
   await database.query('UPDATE schedules SET capacity = 1 WHERE id = $1', [lastDrop])
-  const reservations = await Promise.all([0, 1].map(() => request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId: lastDrop, varietyId: 'tebu-1', requestId: randomUUID(), cart: { flask: 1, jug: 0, asam: 0, limau: 0 } } })))
+  const reservations = await Promise.all([0, 1].map(() => request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId: lastDrop, varietyId: 'tebu-1', requestId: randomUUID(), cart: { kecik: 1, besar: 0, asam: 0, limau: 0 } } })))
   assert.deepEqual(reservations.map(r => r.status).sort(), [200, 409], 'Concurrent checkout must enforce capacity')
   await assert.rejects(database.query("INSERT INTO expenses(date,amount,schedule_id) VALUES ('2026-11-01',100,'1900-01-01')"), /foreign key/)
 
@@ -134,24 +134,24 @@ try {
   assert.equal((await request('/api/catalog')).data.varieties[0].name, 'Tebu Madu Test')
   assert.equal((await request(`/api/orders/${order.data.token}`)).data.varietyName, 'Tebu 1', 'Existing tickets retain the variety sold at checkout')
   const tebu2 = live.varieties.find(row => row.id === 'tebu-2')
-  const consumed = tebu2.flaskQty - tebu2.flaskRemaining
-  await database.query("UPDATE harvests SET flask_qty = $1 WHERE variety_id = 'tebu-2'", [consumed])
-  const batch = await request('/api/admin/logs/harvests', { method: 'POST', token: adminKey, body: { date: '2026-11-01', varietyId: 'tebu-2', quantity: 0, flaskQty: 1, jugQty: 0 } })
+  const consumed = tebu2.kecikQty - tebu2.kecikRemaining
+  await database.query("UPDATE harvests SET kecik_qty = $1 WHERE variety_id = 'tebu-2'", [consumed])
+  const batch = await request('/api/admin/logs/harvests', { method: 'POST', token: adminKey, body: { date: '2026-11-01', varietyId: 'tebu-2', quantity: 0, kecikQty: 1, besarQty: 0 } })
   assert.equal(batch.status, 200)
   live = (await request('/api/catalog')).data
-  assert.equal(live.varieties.find(row => row.id === 'tebu-2').flaskRemaining, 1)
+  assert.equal(live.varieties.find(row => row.id === 'tebu-2').kecikRemaining, 1)
   const raceDates = [catalog.data.drops.at(-2).id, catalog.data.drops.at(-3).id]
-  const stockRace = await Promise.all(raceDates.map(id => request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId: id, varietyId: 'tebu-2', requestId: randomUUID(), cart: { flask: 1, jug: 0, asam: 0, limau: 0 } } })))
+  const stockRace = await Promise.all(raceDates.map(id => request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId: id, varietyId: 'tebu-2', requestId: randomUUID(), cart: { kecik: 1, besar: 0, asam: 0, limau: 0 } } })))
   assert.deepEqual(stockRace.map(row => row.status).sort(), [200, 409], 'A single bottle cannot be sold across two different dates')
   const won = stockRace.find(row => row.status === 200).data
   assert.equal((await request('/api/admin/logs/harvests/' + batch.data.id, { method: 'DELETE', token: adminKey })).status, 409, 'A harvest cannot be removed below reserved stock')
-  assert.equal((await request('/api/admin/logs/harvests/' + batch.data.id, { method: 'PATCH', token: adminKey, body: { date: '2026-11-01', varietyId: 'tebu-2', quantity: 1, flaskQty: 0, jugQty: 0 } })).status, 409)
-  const jugOrder = await request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId: raceDates[0], varietyId: 'tebu-2', requestId: randomUUID(), cart: { flask: 0, jug: 1, asam: 0, limau: 0 } } })
-  assert.equal(jugOrder.status, 200, 'Jug stock stays separate from flask stock')
+  assert.equal((await request('/api/admin/logs/harvests/' + batch.data.id, { method: 'PATCH', token: adminKey, body: { date: '2026-11-01', varietyId: 'tebu-2', quantity: 1, kecikQty: 0, besarQty: 0 } })).status, 409)
+  const besarOrder = await request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId: raceDates[0], varietyId: 'tebu-2', requestId: randomUUID(), cart: { kecik: 0, besar: 1, asam: 0, limau: 0 } } })
+  assert.equal(besarOrder.status, 200, 'Besar stock stays separate from kecik stock')
   await database.query("UPDATE orders SET expires_at = now() - interval '1 minute' WHERE token = $1", [won.token])
-  assert.equal((await request('/api/catalog')).data.varieties.find(row => row.id === 'tebu-2').flaskRemaining, 1, 'Expired unpaid reservations release stock')
+  assert.equal((await request('/api/catalog')).data.varieties.find(row => row.id === 'tebu-2').kecikRemaining, 1, 'Expired unpaid reservations release stock')
   assert.equal((await request('/api/admin/logs/harvests/' + batch.data.id, { method: 'DELETE', token: adminKey })).status, 200)
-  assert.equal((await request('/api/admin/logs/harvests', { method: 'POST', token: adminKey, body: { date: '2026-11-01', varietyId: 'tebu-1', quantity: 1, flaskQty: 1.5, jugQty: 0 } })).status, 400)
+  assert.equal((await request('/api/admin/logs/harvests', { method: 'POST', token: adminKey, body: { date: '2026-11-01', varietyId: 'tebu-1', quantity: 1, kecikQty: 1.5, besarQty: 0 } })).status, 400)
 
   // Close days at the API, including a pending receipt; seed must not reopen them.
   const closeDate = catalog.data.drops.find(drop => drop.id !== lastDrop).id
@@ -213,31 +213,31 @@ try {
   }
   // Manual sales reserve real inventory even when unpaid and have independent payment tracking.
   const manualDate = '2026-10-25'
-  const manualBody = { requestId: randomUUID(), scheduleId: manualDate, name: 'Offline Customer', phone: '', varietyId: 'tebu-1', paymentStatus: 'unpaid', cart: { flask: 1, jug: 0, asam: 0, limau: 0 } }
+  const manualBody = { requestId: randomUUID(), scheduleId: manualDate, name: 'Offline Customer', phone: '', varietyId: 'tebu-1', paymentStatus: 'unpaid', cart: { kecik: 1, besar: 0, asam: 0, limau: 0 } }
   assert.equal((await request('/api/admin/orders', { method: 'POST', body: manualBody })).status, 401)
   const beforeManual = (await request('/api/catalog')).data.varieties.find(v => v.id === 'tebu-1')
   const beforeRevenue = (await request('/api/admin/logs', { token: adminKey })).data.revenue
   const manual = await request('/api/admin/orders', { method: 'POST', token: adminKey, body: manualBody })
   assert.equal(manual.status, 200); assert.equal(manual.data.manualPaymentStatus, 'unpaid'); assert.equal(manual.data.phone, '')
   assert.equal((await request('/api/admin/orders', { method: 'POST', token: adminKey, body: manualBody })).data.token, manual.data.token)
-  assert.equal((await request('/api/catalog')).data.varieties.find(v => v.id === 'tebu-1').flaskRemaining, beforeManual.flaskRemaining - 1)
+  assert.equal((await request('/api/catalog')).data.varieties.find(v => v.id === 'tebu-1').kecikRemaining, beforeManual.kecikRemaining - 1)
   assert.equal((await request('/api/admin/logs', { token: adminKey })).data.revenue, beforeRevenue)
   const manualSchedule = (await database.query('SELECT * FROM schedules WHERE id = $1', [manualDate])).rows[0]
-  assert.equal(manualSchedule.capacity, 11); assert.equal(manualSchedule.flask_capacity, 8); assert.equal(manualSchedule.jug_capacity, 3); assert.equal(manualSchedule.open, false)
+  assert.equal(manualSchedule.capacity, 12); assert.equal(manualSchedule.kecik_capacity, 12); assert.equal(manualSchedule.besar_capacity, 6); assert.equal(manualSchedule.open, false)
   assert.equal((await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'manual-payment', orderToken: manual.data.token, paymentStatus: 'paid' } })).status, 200)
   assert.equal((await request('/api/admin/logs', { token: adminKey })).data.revenue, beforeRevenue + manual.data.total)
   assert.equal((await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'manual-payment', orderToken: manual.data.token, paymentStatus: 'unpaid' } })).status, 200)
   assert.equal((await request('/api/admin/logs', { token: adminKey })).data.revenue, beforeRevenue)
-  const overflow = await request('/api/admin/orders', { method: 'POST', token: adminKey, body: { ...manualBody, requestId: randomUUID(), cart: { flask: 0, jug: 4, asam: 0, limau: 0 } } })
-  assert.equal(overflow.status, 409, 'Manual orders enforce big bottle daily limits')
+  const overflow = await request('/api/admin/orders', { method: 'POST', token: adminKey, body: { ...manualBody, requestId: randomUUID(), cart: { kecik: 0, besar: 7, asam: 0, limau: 0 } } })
+  assert.equal(overflow.status, 409, 'Manual orders enforce shared daily box capacity')
   assert.equal((await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'cancel-manual', orderToken: manual.data.token } })).status, 200)
-  assert.equal((await request('/api/catalog')).data.varieties.find(v => v.id === 'tebu-1').flaskRemaining, beforeManual.flaskRemaining)
+  assert.equal((await request('/api/catalog')).data.varieties.find(v => v.id === 'tebu-1').kecikRemaining, beforeManual.kecikRemaining)
   assert.equal((await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'manual-payment', orderToken: manual.data.token, paymentStatus: 'paid' } })).status, 409)
-  await database.query('UPDATE schedules SET flask_capacity = 1 WHERE id = $1', [manualDate])
+  await database.query('UPDATE schedules SET capacity = 1 WHERE id = $1', [manualDate])
   const manualRace = await Promise.all([0, 1].map(() => request('/api/admin/orders', { method: 'POST', token: adminKey, body: { ...manualBody, requestId: randomUUID() } })))
-  assert.deepEqual(manualRace.map(row => row.status).sort(), [200, 409], 'Concurrent manual orders cannot exceed a bottle size limit')
+  assert.deepEqual(manualRace.map(row => row.status).sort(), [200, 409], 'Concurrent manual orders cannot exceed shared box capacity')
   await request('/api/admin', { method: 'PATCH', token: adminKey, body: { action: 'cancel-manual', orderToken: manualRace.find(row => row.status === 200).data.token } })
-  console.log('PASS: manual orders persist, retry safely, reserve stock while unpaid, track paid revenue, enforce size limits and release stock on cancellation.')
+  console.log('PASS: manual orders persist, retry safely, reserve stock while unpaid, track paid revenue, enforce shared capacity and release stock on cancellation.')
 
   const checklistToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   const todayOrder = await request('/api/admin/orders', { method: 'POST', token: adminKey, body: { ...manualBody, requestId: randomUUID(), scheduleId: checklistToday, name: 'Today packing customer', paymentStatus: 'paid' } })
@@ -254,7 +254,7 @@ try {
   assert.equal(secured.status, 200); assert.equal(secured.data.protected, true)
   assert.equal((await request('/api/orders', { token: openLookup.data.token })).status, 401, 'Enabling protection revokes previous sessions')
   const challenge = await request('/api/identity', { method: 'POST', token: secured.data.token, body: { phone: privacyPhone, mode: 'history' } })
-  assert.equal(challenge.data.passwordRequired, true); assert.equal(challenge.data.token, undefined)
+  assert.equal(challenge.data.passwordRequired, false); assert.equal(challenge.data.token, secured.data.token, 'An existing session unlocks history without another password')
   assert.equal((await request('/api/identity', { method: 'POST', body: { phone: privacyPhone, mode: 'history', password: 'wrong-password' } })).status, 403)
   const unlocked = await request('/api/identity', { method: 'POST', body: { phone: privacyPhone, mode: 'history', password: 'history-pass-123' } })
   assert.equal(unlocked.status, 200); assert.equal((await request('/api/orders', { token: unlocked.data.token })).status, 200)
@@ -280,7 +280,7 @@ try {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(base)
-  await page.getByRole('button', { name: 'Add The Everyday Flask', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Add Botol Kecik', exact: true }).waitFor()
   await page.goto(`${base}/admin/log`)
   await page.getByLabel('Admin key').fill(adminKey)
   await page.getByRole('button', { name: 'Open pantry ops' }).click()
@@ -292,15 +292,15 @@ try {
   await page.getByRole('dialog').getByRole('button', { name: 'Add expense', exact: true }).click()
   await page.getByRole('cell').filter({ hasText: 'Browser database test' }).waitFor()
   assert.equal(Number((await database.query("SELECT amount FROM expenses WHERE note = 'Browser database test'")).rows[0].amount), 1875)
-  const stockBefore = (await request('/api/catalog')).data.varieties.find(row => row.id === 'tebu-1').flaskQty
+  const stockBefore = (await request('/api/catalog')).data.varieties.find(row => row.id === 'tebu-1').kecikQty
   await page.getByRole('button', { name: 'Log harvest', exact: true }).click()
   assert.equal(await page.getByLabel('Drop optional').count(), 0)
   await page.getByLabel('Tebu variety', { exact: true }).selectOption('tebu-1')
-  await page.getByLabel('Ready 500 ml bottles', { exact: true }).fill('7')
-  await page.getByLabel('Ready 1 litre bottles', { exact: true }).fill('3')
+  await page.getByLabel('Ready 500ml bottles', { exact: true }).fill('7')
+  await page.getByLabel('Ready 1l bottles', { exact: true }).fill('3')
   await page.getByRole('dialog').getByRole('button', { name: 'Log harvest', exact: true }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
-  assert.equal((await request('/api/catalog')).data.varieties.find(row => row.id === 'tebu-1').flaskQty, stockBefore + 7)
+  assert.equal((await request('/api/catalog')).data.varieties.find(row => row.id === 'tebu-1').kecikQty, stockBefore + 7)
   const context2 = await browser.newContext()
   const page2 = await context2.newPage()
   debugPage = page2
@@ -331,7 +331,7 @@ try {
   await page.getByRole('button', { name: 'Add order', exact: true }).click()
   await page.getByLabel('Customer name', { exact: true }).fill('Browser offline sale')
   await page.getByLabel('Order date', { exact: true }).fill(removeDate)
-  await page.getByLabel('The Everyday Flask (500 ml)').fill('1')
+  await page.getByLabel('Botol Kecik (500ml)').fill('1')
   await page.getByLabel('Payment status', { exact: true }).selectOption('paid')
   await page.getByRole('button', { name: 'Save order', exact: true }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })

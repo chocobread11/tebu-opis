@@ -8,7 +8,8 @@ const input = z.object({
     try { return normalizePhone(value) } catch { ctx.addIssue({ code: 'custom', message: 'Enter a valid Malaysian mobile number.' }); return z.NEVER }
   }),
   varietyId: z.enum(['tebu-1', 'tebu-2']), paymentStatus: z.enum(['paid', 'unpaid']),
-  cart: z.object({ flask: quantity, jug: quantity, asam: quantity, limau: quantity }).strict(),
+  remarks: orderRemarksInput.optional(),
+  cart: z.object({ kecik: quantity, besar: quantity, asam: quantity, limau: quantity }).strict(),
 }).strict()
 export default defineEventHandler(async event => {
   requireAdmin(event)
@@ -28,7 +29,7 @@ export default defineEventHandler(async event => {
     await lockVarieties(tx, [data.varietyId])
     const variety = await tx.caneVariety.findUniqueOrThrow({ where: { id: data.varietyId } })
     const stock = await varietyStock(tx, data.varietyId)
-    if (data.cart.flask > stock.flaskRemaining || data.cart.jug > stock.jugRemaining) throw createError({ statusCode: 409, message: 'Not enough bottles of this tebu variety.' })
+    if (data.cart.kecik > stock.kecikRemaining || data.cart.besar > stock.besarRemaining) throw createError({ statusCode: 409, message: 'Not enough bottles of this tebu variety.' })
     await ensureDailyCapacity(tx, schedule, data.cart)
     const selectedIds = (Object.keys(data.cart) as ProductId[]).filter(id => data.cart[id] > 0)
     const catalog = await tx.product.findMany({ where: { id: { in: selectedIds }, active: true } })
@@ -42,7 +43,7 @@ export default defineEventHandler(async event => {
     return tx.order.create({ data: {
       token: newToken(), requestId: data.requestId, customerId: customer.id, customerName: data.name,
       scheduleId: data.scheduleId, sequence, tag: `#A${String(sequence).padStart(2, '0')}`,
-      varietyId: variety.id, varietyName: variety.name, cart: data.cart, bottles: bottleCount(data.cart),
+      varietyId: variety.id, varietyName: variety.name, cart: data.cart, bottles: bottleCount(data.cart), remarks: data.remarks || null,
       total: items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0),
       status: 'confirmed', manualPaymentStatus: data.paymentStatus,
       expiresAt: new Date(), items: { create: items },

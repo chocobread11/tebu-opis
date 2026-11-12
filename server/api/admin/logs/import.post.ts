@@ -10,7 +10,7 @@ export default defineEventHandler(async event => {
   if (!parsed.success) throw createError({ statusCode: 400, message: 'Saved browser logs contain invalid records.' })
   await db().$transaction([
     db().expense.createMany({ data: parsed.data.expenses.map(row => ({ ...row, date: new Date(`${row.date}T00:00:00Z`) })), skipDuplicates: true }),
-    db().harvest.createMany({ data: parsed.data.harvests.map(row => ({ ...row, date: new Date(`${row.date}T00:00:00Z`), flaskQty: 0, jugQty: 0 })), skipDuplicates: true }),
+    db().harvest.createMany({ data: parsed.data.harvests.map(row => ({ ...row, date: new Date(`${row.date}T00:00:00Z`), kecikQty: 0, besarQty: 0 })), skipDuplicates: true }),
   ])
   return { ok: true }
 })

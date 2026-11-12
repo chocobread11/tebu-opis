@@ -12,7 +12,7 @@ try {
  for(const [width,height] of [[375,667],[768,900],[1440,1000]]) {
   const context=await browser.newContext({viewport:{width,height},hasTouch:width===375});const page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto(base);await page.waitForTimeout(800)
-  await page.getByRole('button',{name:'Add The Everyday Flask',exact:true}).click();await page.getByRole('button',{name:'LOCK MY BOTTLE'}).click()
+  await page.getByRole('button',{name:'Add Botol Kecik',exact:true}).click();await page.getByRole('button',{name:'LOCK MY BOTTLE'}).click()
   await visibleAction(page,'Continue to payment')
   await page.getByLabel('Malaysian mobile number').fill('0123456789');await page.getByLabel('What should we write on your bag?').fill('Flow Test')
   await page.getByRole('checkbox',{name:'Protect my past transactions with a password'}).check();await page.getByLabel('Create history password',{exact:true}).fill('history-test-123')
@@ -33,7 +33,7 @@ try {
   // Switching the lookup number immediately hides the previous customer's records.
   await page.getByLabel('Mobile number',{exact:true}).fill('0129999999');assert.equal(await page.getByRole('table').count(),0);await page.getByRole('button',{name:'View transactions',exact:true}).click();await page.getByRole('heading',{name:'No transactions found.',exact:true}).waitFor()
   // An unprotected customer can resume an unfinished receipt upload after a reload.
-  await page.goto(base);await page.getByRole('button',{name:'Add The Everyday Flask',exact:true}).click();await page.getByRole('button',{name:'LOCK MY BOTTLE'}).click()
+  await page.goto(base);await page.getByRole('button',{name:'Add Botol Kecik',exact:true}).click();await page.getByRole('button',{name:'LOCK MY BOTTLE'}).click()
   await page.getByLabel('Malaysian mobile number').fill('0128888888');await page.getByLabel('What should we write on your bag?').fill('No Password')
   await page.getByRole('button',{name:'Continue to payment',exact:true}).click();await page.getByRole('button',{name:'Continue demo',exact:true}).waitFor();await page.getByRole('button',{name:'Close checkout',exact:true}).click()
   await page.goto(new URL('/drop',base).href);await page.getByRole('table').waitFor();await page.getByRole('link',{name:/View receipt #D/}).click();await page.getByRole('button',{name:'Upload payment receipt',exact:true}).click()

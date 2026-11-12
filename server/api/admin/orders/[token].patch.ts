@@ -5,7 +5,8 @@ const input = z.object({
   name: z.string().trim().min(1).max(80), scheduleId: z.iso.date(), varietyId: z.enum(['tebu-1', 'tebu-2']),
   status: z.enum(['pending_payment', 'pending_review', 'confirmed', 'ready', 'collected', 'rejected']),
   paymentStatus: z.enum(['paid', 'unpaid']).optional(),
-  cart: z.object({ flask: qty, jug: qty, asam: qty, limau: qty }).strict(),
+  remarks: orderRemarksInput.optional(),
+  cart: z.object({ kecik: qty, besar: qty, asam: qty, limau: qty }).strict(),
 }).strict()
 export default defineEventHandler(async event => {
   requireAdmin(event)
@@ -32,6 +33,7 @@ export default defineEventHandler(async event => {
     if (current.scheduleId !== data.scheduleId) sequence = ((await tx.order.aggregate({ where: { scheduleId: data.scheduleId }, _max: { sequence: true } }))._max.sequence ?? 0) + 1
     const updated = await tx.order.update({ where: { id: current.id }, data: {
       customerName: data.name, scheduleId: data.scheduleId, sequence, tag: `#A${String(sequence).padStart(2, '0')}`,
+      ...(data.remarks !== undefined ? { remarks: data.remarks || null } : {}),
       varietyId: variety.id, varietyName: variety.name, cart: data.cart, bottles: bottleCount(data.cart), status: data.status,
       total: items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0),
       ...(current.manualPaymentStatus ? { manualPaymentStatus: data.paymentStatus ?? current.manualPaymentStatus } : {}),
@@ -40,7 +42,7 @@ export default defineEventHandler(async event => {
       ...(data.status === 'pending_payment' && current.status !== 'pending_payment' ? { expiresAt: new Date(Date.now() + 20 * 60_000) } : {}),
       items: { deleteMany: {}, create: items },
     } })
-    await ensureDailyCapacity(tx, await tx.schedule.findUniqueOrThrow({ where: { id: data.scheduleId } }), { flask: 0, jug: 0 })
+    await ensureDailyCapacity(tx, await tx.schedule.findUniqueOrThrow({ where: { id: data.scheduleId } }), { kecik: 0, besar: 0 })
     await ensureStockNotOversold(tx, [variety.id])
     return updated
   })

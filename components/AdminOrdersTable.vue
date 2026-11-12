@@ -1,26 +1,39 @@
 <script setup lang="ts">
-import { cartSummary, money, type Ticket } from '~/shared/domain'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
+import { MessageCircle, Pencil } from '~/lib/icons'
+import { cartSummary, money, ticketWhatsAppUrl, type Ticket } from '~/shared/domain'
+import type { PaymentStatus } from '~/shared/payment'
 const props = defineProps<{ orders: Ticket[]; packing?: boolean; busy?: boolean; manage?: boolean }>()
-const emit = defineEmits<{ pack: [order: Ticket, packed: boolean]; details: [order: Ticket]; edit: [order: Ticket]; delete: [order: Ticket] }>()
+const emit = defineEmits<{ details: [order: Ticket]; edit: [order: Ticket]; payment: [order: Ticket, status: PaymentStatus] }>()
+const origin = useRequestURL().origin
 function placed(value: string) {
-  const date = new Date(value)
-  const day = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'numeric', year: 'numeric' }).format(date)
-  const time = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kuala_Lumpur', hour: 'numeric', minute: '2-digit', hour12: true }).format(date).replace(/\s/g, '')
-  return `${day} - ${time}`
+  return new Intl.DateTimeFormat('en-MY', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value))
+}
+function openRow(order: Ticket, event: MouseEvent) {
+  if (props.busy || (event.target as HTMLElement).closest('button, a, input, select')) return
+  // The native details button is also the dialog's focus-return target.
+  (event.currentTarget as HTMLElement).querySelector<HTMLButtonElement>('.transaction-open')?.focus({ preventScroll: true })
+  emit('details', order)
 }
 </script>
 <template>
   <div class="log-table-card ops-transactions-table">
-    <table class="log-table transaction-table"><caption class="sr-only">{{ manage ? 'Transaction history' : packing ? 'Packing transactions' : 'Drop status and contact actions' }}</caption>
-      <thead><tr><th scope="col">Transaction</th><th scope="col">Items</th><th scope="col">Payment</th><th scope="col">Action</th></tr></thead>
-      <tbody><tr v-for="order in orders" :key="order.token" :data-token="order.token" :class="{ 'transaction-packed': order.packed }">
-        <td><strong>{{ order.tag }} · {{ order.name }}</strong><span class="table-note">{{ placed(order.createdAt) }}</span></td>
-        <td><strong v-if="order.varietyName">{{ order.varietyName }}</strong><span class="table-note">{{ cartSummary(order.cart) }}</span></td>
-        <td><strong>{{ money(order.total) }}</strong><span class="table-note">{{ order.manualPaymentStatus ? `Manual · ${order.manualPaymentStatus}` : order.status === 'pending_review' ? 'Receipt under review' : order.status === 'pending_payment' ? 'Awaiting receipt' : order.status === 'rejected' ? 'Rejected' : 'Payment confirmed' }}</span></td>
-        <td>
-          <TransactionActionsMenu :order="order" :manage="manage" :busy="busy" @details="emit('details', $event)" @edit="emit('edit', $event)" @delete="emit('delete', $event)" />
-        </td>
-      </tr><tr v-if="!orders.length"><td colspan="4" class="table-empty"><strong>No matching transactions.</strong><span>Try another date or search, or add a manual order.</span></td></tr></tbody>
-    </table>
+    <Table class="log-table admin-orders-table">
+      <TableCaption class="sr-only">Transactions. Select a customer to view details, or use the payment badge to change payment status.</TableCaption>
+      <TableHeader><TableRow><TableHead scope="col">Transaction</TableHead><TableHead scope="col">Items / drop</TableHead><TableHead scope="col">Payment</TableHead><TableHead scope="col" class="text-right"><span class="sr-only">Actions</span></TableHead></TableRow></TableHeader>
+      <TableBody>
+        <TableRow v-for="order in orders" :key="order.token" :data-token="order.token" class="transaction-row" @click="openRow(order, $event)">
+          <TableCell><button type="button" class="transaction-open" :disabled="busy" :aria-label="`View transaction ${order.tag} for ${order.name}`" @click.stop="emit('details', order)"><span class="transaction-reference">{{ order.tag }}</span><strong>{{ order.name }}</strong></button><time class="table-note" :datetime="order.createdAt">{{ placed(order.createdAt) }}<span v-if="order.manualPaymentStatus"> · Manual</span></time><span class="table-note transaction-mobile-drop">Drop {{ order.scheduleId }}</span></TableCell>
+          <TableCell><strong>{{ order.varietyName || 'Tebu' }}</strong><span class="table-note">{{ cartSummary(order.cart) }}</span><span class="table-note">Drop · {{ order.scheduleId }}</span><OrderRemarks :value="order.remarks" compact preview /></TableCell>
+          <TableCell><strong class="transaction-amount">{{ money(order.total) }}</strong><PaymentStatusControl :order="order" :busy="busy" :readonly="!manage" @change="(order, status) => emit('payment', order, status)" /></TableCell>
+          <TableCell><div class="row-actions transaction-row-actions" @click.stop>
+            <a v-if="ticketWhatsAppUrl(order, origin)" class="table-action" :href="ticketWhatsAppUrl(order, origin)" target="_blank" rel="noopener noreferrer" :aria-label="`WhatsApp ticket ${order.tag} for ${order.name}`" title="Send ticket via WhatsApp"><MessageCircle aria-hidden="true" :size="14" /></a>
+            <button v-else class="table-action" type="button" disabled :aria-label="`No phone number for ${order.tag}`" title="No phone number"><MessageCircle aria-hidden="true" :size="14" /></button>
+            <button v-if="manage" class="table-action" type="button" :disabled="busy" :aria-label="`Edit transaction ${order.tag} for ${order.name}`" title="Edit transaction" @click="emit('edit', order)"><Pencil aria-hidden="true" :size="14" /></button>
+          </div></TableCell>
+        </TableRow>
+        <TableRow v-if="!orders.length"><TableCell colspan="4" class="table-empty"><strong>{{ busy ? 'Loading transactions…' : 'No matching transactions.' }}</strong><span v-if="!busy">Try another payment status, date or search.</span></TableCell></TableRow>
+      </TableBody>
+    </Table>
   </div>
 </template>

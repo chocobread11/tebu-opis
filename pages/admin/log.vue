@@ -13,7 +13,7 @@ const dialog = ref<'expense' | 'harvest' | null>(null)
 const editingId = ref('')
 const formError = ref('')
 const expenseForm = reactive<{ date: string; amount: number | undefined; note: string }>({ date: '', amount: undefined, note: '' })
-const harvestForm = reactive<{ date: string; quantity: number | undefined; varietyId: string; flaskQty: number | undefined; jugQty: number | undefined }>({ date: '', quantity: undefined, varietyId: '', flaskQty: 0, jugQty: 0 })
+const harvestForm = reactive<{ date: string; quantity: number | undefined; varietyId: string; kecikQty: number | undefined; besarQty: number | undefined }>({ date: '', quantity: undefined, varietyId: '', kecikQty: 0, besarQty: 0 })
 const deleting = ref<{ kind: 'expense' | 'harvest'; id: string } | null>(null)
 const paidOrders = computed(() => admin.orders.value.filter(order => ['confirmed', 'ready', 'collected'].includes(order.status) && order.manualPaymentStatus !== 'unpaid'))
 const revenue = computed(() => admin.local ? paidOrders.value.reduce((sum, order) => sum + order.total, 0) : logs.revenue.value)
@@ -44,7 +44,7 @@ function openExpense(expense?: Expense) {
 
 function openHarvest(harvest?: Harvest) {
   editingId.value = harvest?.id || ''
-  Object.assign(harvestForm, { date: harvest?.date || today(), quantity: harvest?.quantity, varietyId: harvest?.varietyId || admin.varieties.value[0]?.id || '', flaskQty: harvest?.flaskQty ?? 0, jugQty: harvest?.jugQty ?? 0 })
+  Object.assign(harvestForm, { date: harvest?.date || today(), quantity: harvest?.quantity, varietyId: harvest?.varietyId || admin.varieties.value[0]?.id || '', kecikQty: harvest?.kecikQty ?? 0, besarQty: harvest?.besarQty ?? 0 })
   formError.value = ''
   dialog.value = 'harvest'
 }
@@ -63,13 +63,13 @@ async function saveExpense() {
 
 async function saveHarvest() {
   const quantity = Number(harvestForm.quantity || 0)
-  const flaskQty = Number(harvestForm.flaskQty)
-  const jugQty = Number(harvestForm.jugQty)
-  if (!harvestForm.date || !Number.isFinite(quantity) || quantity < 0 || quantity > 999999 || !harvestForm.varietyId || !Number.isInteger(flaskQty) || !Number.isInteger(jugQty) || flaskQty < 0 || jugQty < 0 || flaskQty > 10000 || jugQty > 10000 || (quantity === 0 && flaskQty + jugQty === 0)) {
+  const kecikQty = Number(harvestForm.kecikQty)
+  const besarQty = Number(harvestForm.besarQty)
+  if (!harvestForm.date || !Number.isFinite(quantity) || quantity < 0 || quantity > 999999 || !harvestForm.varietyId || !Number.isInteger(kecikQty) || !Number.isInteger(besarQty) || kecikQty < 0 || besarQty < 0 || kecikQty > 10000 || besarQty > 10000 || (quantity === 0 && kecikQty + besarQty === 0)) {
     formError.value = 'Choose your tebu variety and enter harvested cane or ready bottle quantities.'
     return
   }
-  const harvest: Harvest = { id: editingId.value || crypto.randomUUID(), date: harvestForm.date, quantity, type: admin.varieties.value.find(row => row.id === harvestForm.varietyId)?.name || '', varietyId: harvestForm.varietyId, flaskQty, jugQty }
+  const harvest: Harvest = { id: editingId.value || crypto.randomUUID(), date: harvestForm.date, quantity, type: admin.varieties.value.find(row => row.id === harvestForm.varietyId)?.name || '', varietyId: harvestForm.varietyId, kecikQty, besarQty }
   if (!await logs.saveRecord('harvests', harvest, !!editingId.value)) { formError.value = logs.storageError.value; return }
   dialog.value = null
   shop.notify(editingId.value ? 'Harvest updated.' : 'Harvest logged.')
@@ -143,7 +143,7 @@ async function removeRecord() {
             <TableRow v-for="harvest in harvests" :key="harvest.id">
               <TableCell><time :datetime="harvest.date">{{ dateLabel(harvest.date) }}</time></TableCell>
               <TableCell class="harvest-type">{{ admin.varieties.value.find(v => v.id === harvest.varietyId)?.name || 'Earlier harvest' }}<small v-if="!harvest.varietyId" class="table-note">Choose its tebu variety to publish bottles.</small></TableCell>
-              <TableCell class="text-right font-semibold tabular-nums">{{ harvest.flaskQty || 0 }} × 500 ml<br />{{ harvest.jugQty || 0 }} × 1 litre<small v-if="harvest.quantity" class="table-note">{{ harvest.quantity }} kg cane</small></TableCell>
+              <TableCell class="text-right font-semibold tabular-nums">{{ harvest.kecikQty || 0 }} × 500ml<br />{{ harvest.besarQty || 0 }} × 1l<small v-if="harvest.quantity" class="table-note">{{ harvest.quantity }} kg cane</small></TableCell>
               <TableCell><div class="row-actions"><button class="table-action" :aria-label="`Edit harvest ${harvest.type} ${dateLabel(harvest.date)}`" @click="openHarvest(harvest)"><Pencil aria-hidden="true" :size="13" /></button><button class="table-action delete-action" :aria-label="`Delete harvest ${harvest.type} ${dateLabel(harvest.date)}`" @click="deleting = { kind: 'harvest', id: harvest.id }"><Trash2 aria-hidden="true" :size="13" /></button></div></TableCell>
             </TableRow>
             <TableRow v-if="!harvests.length"><TableCell colspan="4"><div class="table-empty"><Sprout aria-hidden="true" :size="27" :stroke-width="1.3" /><strong>Good things start in the backyard.</strong><span>Log your first harvest when it’s ready.</span></div></TableCell></TableRow>
@@ -167,7 +167,7 @@ async function removeRecord() {
       <form class="record-form" @submit.prevent="saveHarvest">
         <label class="field-label" for="harvest-date">Date</label><input id="harvest-date" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.date" class="input" type="date" :max="today()" required />
         <label class="field-label" for="harvest-type">Tebu variety</label><NativeSelect id="harvest-type" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.varietyId" required><NativeSelectOption v-for="variety in admin.varieties.value" :key="variety.id" :value="variety.id">{{ variety.name }}</NativeSelectOption></NativeSelect>
-        <label class="field-label" for="harvest-qty">Cane harvested (kg) optional</label><NumberInput id="harvest-qty" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.quantity" label="cane weight" :min="0" :max="999999" :step="0.01" :decimals="2" placeholder="0.00" /><div class="calendar-editor-fields"><div><label class="field-label" for="harvest-flask">Ready 500 ml bottles</label><NumberInput id="harvest-flask" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.flaskQty" label="ready 500 ml bottles" :min="0" :max="10000" required /></div><div><label class="field-label" for="harvest-jug">Ready 1 litre bottles</label><NumberInput id="harvest-jug" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.jugQty" label="ready 1 litre bottles" :min="0" :max="10000" required /></div></div><p class="helper">Only ready bottles increase availability on the public menu.</p>
+        <label class="field-label" for="harvest-qty">Cane harvested (kg) optional</label><NumberInput id="harvest-qty" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.quantity" label="cane weight" :min="0" :max="999999" :step="0.01" :decimals="2" placeholder="0.00" /><div class="calendar-editor-fields"><div><label class="field-label" for="harvest-kecik">Ready 500ml bottles</label><NumberInput id="harvest-kecik" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.kecikQty" label="ready 500ml bottles" :min="0" :max="10000" required /></div><div><label class="field-label" for="harvest-besar">Ready 1l bottles</label><NumberInput id="harvest-besar" :aria-invalid="!!formError" :aria-describedby="formError ? 'log-form-error' : undefined" v-model="harvestForm.besarQty" label="ready 1l bottles" :min="0" :max="10000" required /></div></div><p class="helper">Only ready bottles increase availability on the public menu.</p>
         <p v-if="formError" id="log-form-error" class="error" role="alert">{{ formError }}</p>
         <div class="record-form-actions"><button type="button" class="secondary" :disabled="logs.busy.value" @click="dialog = null">Cancel</button><button type="submit" class="primary" :disabled="logs.busy.value">{{ editingId ? 'Save changes' : 'Log harvest' }}<Plus aria-hidden="true" v-if="!editingId" :size="14" /></button></div>
       </form>

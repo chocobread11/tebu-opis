@@ -6,11 +6,14 @@ export default defineEventHandler(async event => {
   if (data.data.action === 'collect') {
     if (order.status === 'collected') return toTicket(order)
     const [updated] = await db().order.updateManyAndReturn({ data: { status: 'collected' }, where: { id: order.id, status: 'ready' } })
-    if (!updated) throw createError({ statusCode: 409, message: 'Your bottle is not ready for pickup yet.' })
+    if (!updated) {
+      const current = await db().order.findUnique({ where: { id: order.id } })
+      if (current?.status === 'collected') return toTicket(current)
+      throw createError({ statusCode: 409, message: 'Your bottle is not ready for pickup yet.' })
+    }
     return toTicket(updated)
   }
-  const customer = await requireCustomer(event)
-  if (order.customerId !== customer.id) throw createError({ statusCode: 403, message: 'This receipt belongs to another customer.' })
+  await authorizeReceipt(event, order)
   return db().$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM schedules WHERE id = ${order.scheduleId} FOR UPDATE`
     const schedule = await tx.schedule.findUnique({ where: { id: order.scheduleId } })

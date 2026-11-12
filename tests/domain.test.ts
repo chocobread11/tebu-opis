@@ -7,7 +7,7 @@ test('normalizes common Malaysian mobile formats without accepting non-mobile nu
   for (const v of ['03 1234 5678', 'abc0123456789', '60123', '65123456789']) assert.throws(() => normalizePhone(v))
 })
 test('prices in integer sen and distinguishes bottles from add-ons', () => {
-  const cart = { flask: 2, jug: 1, asam: 1, limau: 2 }
+  const cart = { kecik: 2, besar: 1, asam: 1, limau: 2 }
   assert.equal(total(cart), 2600); assert.equal(bottleCount(cart), 3)
 })
 test('drop dates skip weekends, use Malaysia time and cross month boundaries', () => {
@@ -45,12 +45,29 @@ test('ordering week rolls over on Sunday in Malaysia, including year boundaries'
   assert.equal(rollover.end, '2027-01-03')
 })
 
-test('daily defaults reserve eight small bottles and three big bottles', async () => {
+test('daily defaults share twelve spaces between both bottle sizes', async () => {
   const { dailyBottleStandard, dailyBottleCapacity, describeDrop } = await import('../shared/domain')
-  assert.deepEqual(dailyBottleStandard, { flask: 8, jug: 3 })
-  assert.equal(dailyBottleCapacity, 11)
-  assert.equal(describeDrop('2026-11-02').capacity, 11)
-  assert.ok(nextDrops(new Date('2026-11-01T00:00:00Z')).every(day => day.capacity === 11 && day.remaining === 11))
+  assert.deepEqual(dailyBottleStandard, { kecik: 12, besar: 6 })
+  assert.equal(dailyBottleCapacity, 12)
+  assert.equal(describeDrop('2026-11-02').capacity, 12)
+  assert.ok(nextDrops(new Date('2026-11-01T00:00:00Z')).every(day => day.capacity === 12 && day.remaining === 12))
+})
+
+test('mixed bottles consume shared spaces while physical bottle counts stay separate', async () => {
+  const { bottleSpaces, boxAvailability, availableBottles } = await import('../shared/domain')
+  for (const cart of [{ kecik: 12, besar: 0 }, { kecik: 0, besar: 6 }, { kecik: 4, besar: 4 }, { kecik: 8, besar: 2 }]) {
+    assert.equal(bottleSpaces(cart), 12)
+    assert.equal(boxAvailability(12, cart).remaining, 0)
+  }
+  const lastSpace = boxAvailability(12, { kecik: 1, besar: 5 })
+  assert.equal(lastSpace.remaining, 1)
+  assert.equal(lastSpace.kecikRemaining, 1)
+  assert.equal(lastSpace.besarRemaining, 0)
+  assert.equal(availableBottles('kecik', 12, { kecik: 0, besar: 2 }, 20), 8)
+  assert.equal(availableBottles('besar', 12, { kecik: 3, besar: 0 }, 20), 4)
+  assert.equal(availableBottles('kecik', 12, { kecik: 0, besar: 0 }, 3), 3)
+  assert.equal(availableBottles('besar', 1, { kecik: 0, besar: 0 }, 20), 0)
+  assert.equal(availableBottles('kecik', 1, { kecik: 0, besar: 1 }, 20), 0)
 })
 
 test('public delivery dates show only active weekdays, with Friday optional', async () => {
@@ -79,4 +96,17 @@ test('ticket status includes packing and WhatsApp links preserve the private tok
   assert.equal(url.pathname, '/60123456789')
   assert.ok(url.searchParams.get('text')!.includes('https://tebu.example/drop?t=private-token'))
   assert.equal(ticketWhatsAppUrl({ phone: '', token: 'x', name: 'A', tag: '#A01' }, 'https://tebu.example'), '')
+})
+
+test('testing calendar starts today in Malaysia and shows five consecutive dates including weekends', async () => {
+  const { testingOrderingWindow, publicDeliveryDays } = await import('../shared/domain')
+  const now = new Date('2026-12-31T16:00:00Z')
+  const window = testingOrderingWindow(now)
+  assert.deepEqual(window.days, ['2027-01-01', '2027-01-02', '2027-01-03', '2027-01-04', '2027-01-05'])
+  assert.equal(window.start, '2027-01-01')
+  assert.equal(window.end, '2027-01-05')
+  assert.equal(window.refreshAt, '2027-01-02T00:00:00+08:00')
+  const days = ['2026-12-31', ...window.days, '2027-01-06'].map(id => ({ id, open: true, capacity: 11, remaining: 11 }))
+  assert.deepEqual(publicDeliveryDays(days, window, now, true).map(day => day.id), window.days)
+  assert.deepEqual(publicDeliveryDays(days, window, now).map(day => day.id), ['2027-01-04', '2027-01-05'])
 })

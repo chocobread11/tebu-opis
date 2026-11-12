@@ -8,6 +8,11 @@ export type MediaStorageConfig = {
   r2: { accountId: string; endpoint: string; accessKeyId: string; secretAccessKey: string; bucket: string; prefix: string }
 }
 export class MediaStorageConfigurationError extends Error {}
+export type MediaKind = 'receipt' | 'freezer'
+export function mediaObjectKey(prefix: string, filename: string, kind: MediaKind) {
+  const base = prefix.replace(/^\/+|\/+$/g, '')
+  return [base, kind === 'receipt' ? 'receipts' : 'drops', filename].filter(Boolean).join('/')
+}
 
 export function createMediaStorage(config: MediaStorageConfig) {
   let client: S3Client | undefined
@@ -27,11 +32,10 @@ export function createMediaStorage(config: MediaStorageConfig) {
     return join(resolve(config.uploadDir), filename)
   }
   return {
-    async write(filename: string, bytes: Buffer) {
+    async write(filename: string, bytes: Buffer, kind: MediaKind) {
       localPath(filename)
       if (config.uploadStorage === 'r2') {
-        const prefix = config.r2.prefix.replace(/^\/+|\/+$/g, '')
-        const key = prefix ? `${prefix}/${filename}` : filename
+        const key = mediaObjectKey(config.r2.prefix, filename, kind)
         await remote().send(new PutObjectCommand({ Bucket: config.r2.bucket, Key: key, Body: bytes, ContentType: 'image/webp', CacheControl: 'private, no-store' }))
         return `r2:${key}`
       }

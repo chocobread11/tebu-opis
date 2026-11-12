@@ -32,9 +32,10 @@ model CustomerSession {
 
 model Schedule {
   id           String    @id
-  capacity     Int       @default(11)
-  flaskCapacity Int      @default(8) @map("flask_capacity")
-  jugCapacity Int        @default(3) @map("jug_capacity")
+  // Shared spaces: Kecik uses 1, Besar uses 2. Size fields are derived compatibility values.
+  capacity     Int       @default(12)
+  kecikCapacity Int      @default(12) @map("kecik_capacity")
+  besarCapacity Int        @default(6) @map("besar_capacity")
   open         Boolean   @default(true)
   photoId      String?   @map("photo_id") @db.Uuid
   droppedAt    DateTime? @map("dropped_at") @db.Timestamptz(6)
@@ -64,6 +65,7 @@ model Order {
   status      String       @default("pending_payment")
   manualPaymentStatus String? @map("manual_payment_status")
   customerName String? @map("customer_name")
+  remarks     String?      @db.Text
   receiptId   String?      @map("receipt_id") @db.Uuid
   packed      Boolean      @default(false)
   notified    Boolean      @default(false)
@@ -144,8 +146,8 @@ model Harvest {
   quantity   Decimal      @db.Decimal(10, 2)
   varietyId  String?      @map("variety_id")
   variety    CaneVariety? @relation(fields: [varietyId], references: [id], onDelete: Restrict)
-  flaskQty   Int          @default(0) @map("flask_qty")
-  jugQty     Int          @default(0) @map("jug_qty")
+  kecikQty   Int          @default(0) @map("kecik_qty")
+  besarQty     Int          @default(0) @map("besar_qty")
   scheduleId String?      @map("schedule_id")
   schedule   Schedule?    @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)

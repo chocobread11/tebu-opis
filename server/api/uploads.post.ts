@@ -1,12 +1,12 @@
 import { createMediaStorage, MediaStorageConfigurationError } from '../storage/media'
 import { randomUUID } from 'node:crypto'
-import sharp from 'sharp'
+import { imageMimeTypes, imageUploadLimit } from '../../shared/media'
+import { prepareUploadedImage } from '../utils/upload-image'
 export default defineEventHandler(async event => {
   const admin = isAdmin(event)
-  const customer = admin ? null : await requireCustomer(event)
   const parts = await readMultipartFormData(event)
   const file = parts?.find(p => p.name === 'file')
-  if (!file || file.type !== 'image/webp' || file.data.length >= (admin ? 250000 : 80000)) throw createError({ statusCode: 400, message: 'Upload a compressed WebP image within the size limit.' })
+  if (!file || !(imageMimeTypes as readonly string[]).includes(file.type || '') || file.data.length >= imageUploadLimit) throw createError({ statusCode: 400, message: 'Upload a JPG, PNG or WebP image smaller than 250 KB.' })
   let orderId: string | undefined
   let scheduleId: string | undefined
   if (admin) {
@@ -16,16 +16,17 @@ export default defineEventHandler(async event => {
     if (!schedule) throw createError({ statusCode: 404, message: 'Drop not found.' })
   } else {
     const order = await findOrder(parts?.find(p => p.name === 'orderToken')?.data.toString() || '')
-    if (order.customerId !== customer!.id || order.status !== 'pending_payment' || order.expiresAt < new Date()) throw createError({ statusCode: 403, message: 'This order is not accepting receipts. Contact the operator if you have paid.' })
+    await authorizeReceipt(event, order)
+    if (order.status !== 'pending_payment' || order.expiresAt <= new Date()) throw createError({ statusCode: 403, message: 'This order is not accepting receipts. Contact the operator if you have paid.' })
     orderId = order.id
   }
   let bytes: Buffer
-  try { bytes = await sharp(file.data, { limitInputPixels: 12_000_000 }).rotate().webp({ quality: 85 }).toBuffer(); if (bytes.length >= (admin ? 250000 : 80000)) throw new Error('size') }
+  try { bytes = await prepareUploadedImage(file.data) }
   catch { throw createError({ statusCode: 400, message: 'Image verification failed. Try a smaller screenshot.' }) }
   const id = randomUUID()
   const storage = createMediaStorage(useRuntimeConfig())
   let filename: string
-  try { filename = await storage.write(`${id}.webp`, bytes) }
+  try { filename = await storage.write(`${id}.webp`, bytes, admin ? 'freezer' : 'receipt') }
   catch (error) {
     storage.close()
     throw createError({ statusCode: 503, message: error instanceof MediaStorageConfigurationError ? error.message : 'Upload storage is unavailable. Please try again.' })

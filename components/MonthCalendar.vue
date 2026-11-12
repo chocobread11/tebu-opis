@@ -21,7 +21,7 @@ function status(id: string) {
   if (props.admin) return day?.removedAt ? 'Removed' : day?.droppedAt ? 'Delivered' : day?.open ? 'Open' : day?.closedReason || 'Closed'
   if (id <= today) return 'Past'
   if (!day?.open) return 'Closed'
-  return day.remaining ? `${day.remaining} left` : 'Full'
+  return day.remaining ? `${day.remaining} spaces left` : 'Full'
 }
 function label(id: string) {
   const date = new Date(`${id}T00:00:00Z`).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })

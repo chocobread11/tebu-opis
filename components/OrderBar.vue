@@ -20,10 +20,10 @@ watch(itemCount, (value, previous) => {
 }, { immediate: true })
 
 function checkout() {
-  if (!count.value) return shop.notify('Add a flask or jug to get started.')
+  if (!count.value) return shop.notify('Add Botol Kecik or Botol Besar to get started.')
   if (!chosen.value || !chosen.value.remaining) return shop.notify('Choose an open delivery date from the calendar.')
   if (!shop.variety.value) return shop.notify('Choose your tebu variety.')
-  if (shop.cart.value.flask > shop.available('flask') || shop.cart.value.jug > shop.available('jug')) return shop.notify('Stock has changed. Adjust your bottle quantity.')
+  if (shop.cart.value.kecik > shop.available('kecik') || shop.cart.value.besar > shop.available('besar')) return shop.notify('Stock has changed. Adjust your bottle quantity.')
   shop.checkoutOpen.value = true
 }
 </script>

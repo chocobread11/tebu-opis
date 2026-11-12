@@ -8,14 +8,14 @@ export const harvestInput = z.object({
   date: z.iso.date().refine(value => value <= malaysiaToday(), 'Harvests cannot be in the future.').transform(value => new Date(`${value}T00:00:00Z`)),
   quantity: z.number().min(0).max(999_999).multipleOf(0.01).default(0),
   varietyId: z.enum(['tebu-1', 'tebu-2']),
-  flaskQty: z.number().int().min(0).max(10000),
-  jugQty: z.number().int().min(0).max(10000),
-}).strict().refine(row => row.quantity > 0 || row.flaskQty + row.jugQty > 0, 'Enter harvested cane or ready bottles.')
+  kecikQty: z.number().int().min(0).max(10000),
+  besarQty: z.number().int().min(0).max(10000),
+}).strict().refine(row => row.quantity > 0 || row.kecikQty + row.besarQty > 0, 'Enter harvested cane or ready bottles.')
 export function toExpense(row: DatabaseExpense): Expense {
   return { id: row.id, date: row.date.toISOString().slice(0, 10), amount: row.amount, note: row.note }
 }
 export function toHarvest(row: DatabaseHarvest): Harvest {
-  return { id: row.id, date: row.date.toISOString().slice(0, 10), quantity: Number(row.quantity), type: row.type, varietyId: row.varietyId ?? undefined, flaskQty: row.flaskQty, jugQty: row.jugQty }
+  return { id: row.id, date: row.date.toISOString().slice(0, 10), quantity: Number(row.quantity), type: row.type, varietyId: row.varietyId ?? undefined, kecikQty: row.kecikQty, besarQty: row.besarQty }
 }
 export async function saveHarvestRecord(data: z.infer<typeof harvestInput>, id?: string) {
   return db().$transaction(async tx => {

@@ -10,6 +10,7 @@ export default defineNuxtConfig({
   components: [{ path: '~/components', extensions: ['vue'] }],
   css: ['~/assets/css/main.css', '~/assets/css/interface.css'],
   devtools: { enabled: false },
+  routeRules: { '/receipt': { headers: { 'Cache-Control': 'private, no-store' } } },
   vite: {
     // Concurrent live/demo dev servers must not overwrite one another's optimized Vue modules.
     cacheDir: resolve(buildDir, 'cache/vite'),
@@ -22,7 +23,7 @@ export default defineNuxtConfig({
     uploadDir: './data/uploads',
     uploadStorage: 'local',
     r2: { accountId: '', endpoint: '', accessKeyId: '', secretAccessKey: '', bucket: '', prefix: 'tebu/media' },
-    public: { demo: false, duitnowQr: '/qr/duitnow.jpeg', merchantName: 'Tebu Drop' },
+    public: { demo: false, testingCalendar: false, duitnowQr: '/qr/duitnow.jpeg', merchantName: 'Tebu Drop', supportWhatsapp: '' },
   },
   app: { head: {
     htmlAttrs: { lang: 'en-MY' },

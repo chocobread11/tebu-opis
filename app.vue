@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Leaf, ShoppingBag, History, ClipboardCheck, BookOpen, CalendarDays, ArrowUpRight, ArrowLeft } from '~/lib/icons'
 const route = useRoute()
+const isReceipt = computed(() => route.path === '/receipt')
 const shop = useShop()
 const scrollArea = ref<HTMLElement | null>(null)
 const isAdmin = computed(() => route.path.startsWith('/admin'))
@@ -17,7 +18,8 @@ watch(() => route.fullPath, async () => {
 })
 </script>
 <template>
-  <div :class="['app-shell', { 'demo-mode': shop.demo, 'admin-shell': isAdmin }]">
+  <main v-if="isReceipt"><NuxtPage /></main>
+  <div v-else :class="['app-shell', { 'demo-mode': shop.demo, 'admin-shell': isAdmin }]">
     <header v-if="isAdmin" class="app-header admin-header">
       <NuxtLink to="/" class="admin-back" aria-label="Storefront"><ArrowLeft aria-hidden="true" :size="16" /></NuxtLink>
       <div class="admin-header-title"><span class="eyebrow">{{ isLog ? 'FINANCIAL LOG' : isCalendar ? 'CALENDAR & ORDERS' : 'OPS CONSOLE' }}</span><h1>{{ isLog ? 'A little bookkeeping.' : isCalendar ? 'Plan your drops.' : 'Your drop checklist.' }}</h1></div>
