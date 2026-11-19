@@ -18,7 +18,7 @@ x-app: &app
   NUXT_PUBLIC_DEMO: 'false'
   NUXT_PUBLIC_TESTING_CALENDAR: 'false'
   NUXT_TRUST_PROXY: 'true'
-  NUXT_SITE_URL: ${NUXT_SITE_URL:-https://shop.example.invalid}
+  NUXT_SITE_URL: ${NUXT_SITE_URL:?Set the actual public HTTPS origin you will use}
   NUXT_ADMIN_KEY: ${NUXT_ADMIN_KEY:?Set a random admin key of at least 32 characters}
   NUXT_PUBLIC_MERCHANT_NAME: ${NUXT_PUBLIC_MERCHANT_NAME:-Tebu Drop}
   NUXT_PUBLIC_SUPPORT_WHATSAPP: ${NUXT_PUBLIC_SUPPORT_WHATSAPP:-}
