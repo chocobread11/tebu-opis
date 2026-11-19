@@ -1,8 +1,9 @@
+import './helpers/disable-telegram.mjs'
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes, randomUUID, createHmac } from 'node:crypto'
-import { mkdtemp, rm, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -18,14 +19,14 @@ const database = new pg.Client({ connectionString: databaseUrl.toString() })
 const uploads = await mkdtemp(join(tmpdir(), 'tebu-phone-'))
 const port = '3051'
 const base = `http://127.0.0.1:${port}`
-const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: randomBytes(32).toString('hex'), NUXT_UPLOAD_DIR: uploads, NUXT_UPLOAD_STORAGE: 'local', NUXT_PUBLIC_DEMO: 'false', NUXT_PUBLIC_TESTING_CALENDAR: 'true', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
+const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: randomBytes(32).toString('hex'), NUXT_UPLOAD_DIR: uploads, NUXT_UPLOAD_STORAGE: 'local', NUXT_PUBLIC_DEMO: 'false', NUXT_SITE_URL: '', NUXT_PUBLIC_TESTING_CALENDAR: 'true', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
 let server, browser, debugPage, created = false, output = ''
 const run = args => {
   const result = spawnSync('bun', args, { env, encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr || result.stdout)
 }
-const request = async (path, { authorization, body, ...options } = {}) => {
-  const response = await fetch(base + path, { ...options, headers: { ...(authorization ? { Authorization: authorization } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined })
+const request = async (path, { authorization, body, headers, ...options } = {}) => {
+  const response = await fetch(base + path, { ...options, headers: { ...(authorization ? { Authorization: authorization } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined })
   return { status: response.status, data: await response.json() }
 }
 try {
@@ -36,6 +37,8 @@ try {
   await database.connect()
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   await database.query("INSERT INTO schedules(id) SELECT to_char(day, 'YYYY-MM-DD') FROM generate_series($1::date, $1::date + 4, interval '1 day') AS day ON CONFLICT DO NOTHING", [today])
+  // The weekly fixtures may mark today as delivered; this test needs an open checkout day.
+  await database.query('UPDATE schedules SET open=true,dropped_at=NULL,photo_id=NULL,removed_at=NULL WHERE id=$1', [today])
   server = spawn(process.execPath, ['.output/server/index.mjs'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
   server.stdout.on('data', chunk => { output += chunk }); server.stderr.on('data', chunk => { output += chunk })
   let ready = false
@@ -67,15 +70,15 @@ try {
   await box.waitFor()
   assert.equal(await page.locator('#section-week .week-date').count(), 5)
   assert.equal(await page.locator('#section-week .week-date').first().getAttribute('data-date'), today)
-  assert.equal(await box.locator('.box-bottle:not(.box-bottle-vacant)').count(), initialDay.kecikUsed + initialDay.besarUsed)
+  assert.equal(await box.locator('.box-bottle:not(.box-bottle-vacant)').count(), initialDay.itemUsage.reduce((sum,item)=>sum+item.quantity,0))
   assert.equal(await box.locator('.box-bottle-vacant').count(), initialDay.remaining)
-  await page.getByRole('button', { name: 'Add Botol Kecik', exact: true }).click()
-  await page.getByRole('button', { name: 'Add Botol Besar', exact: true }).click()
-  assert.equal(await box.locator('.box-bottle-kecik:not(.box-bottle-vacant)').count(), initialDay.kecikUsed, 'Adding to your cart does not change shared reservations')
-  assert.equal(await box.locator('.box-bottle-besar:not(.box-bottle-vacant)').count(), initialDay.besarUsed)
+  await page.getByRole('button', { name: 'Add Tebu 1 · Kecik', exact: true }).click()
+  await page.getByRole('button', { name: 'Add Tebu 1 · Besar', exact: true }).click()
+  assert.equal(await box.locator('.box-bottle-kecik:not(.box-bottle-vacant)').count(), initialDay.itemUsage.filter(item=>item.spaceCost===1).reduce((sum,item)=>sum+item.quantity,0), 'Adding to your cart does not change shared reservations')
+  assert.equal(await box.locator('.box-bottle-besar:not(.box-bottle-vacant)').count(), initialDay.itemUsage.filter(item=>item.spaceCost===2).reduce((sum,item)=>sum+item.quantity,0))
   const alternateDay = catalog.data.days.find(day => day.id !== today && day.open && day.remaining > 0)
   await page.locator(`.week-date[data-date="${alternateDay.id}"]`).click()
-  assert.equal(await box.locator('.box-bottle:not(.box-bottle-vacant)').count(), alternateDay.kecikUsed + alternateDay.besarUsed, 'Box follows the selected day')
+  assert.equal(await box.locator('.box-bottle:not(.box-bottle-vacant)').count(), alternateDay.itemUsage.reduce((sum,item)=>sum+item.quantity,0), 'Box follows the selected day')
   await page.locator(`.week-date[data-date="${today}"]`).click()
   assert.ok((await box.getAttribute('aria-label')).includes('across all orders'))
   await mkdir('test-results', { recursive: true })
@@ -90,14 +93,38 @@ try {
   await page.getByLabel('Malaysian mobile number').fill('0129990001')
   await page.getByLabel('What should we write on your bag?').fill('Phone Upload Test')
   await page.getByRole('button', { name: 'Continue to payment', exact: true }).click()
-  await page.getByRole('button', { name: 'Upload it from my phone', exact: true }).click()
+  assert.equal(await page.locator('.reference-copy').count(), 0, 'The order tag is not presented as a bank reference')
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    const amount = await page.getByRole('button', { name: 'Copy payment amount', exact: true }).boundingBox()
+    const qr = await page.locator('.payment-card .payment-qr').boundingBox()
+    assert.ok(amount.y + amount.height <= qr.y, 'Amount appears above the bank QR')
+    assert.ok(await page.locator('.amount-copy').evaluate(element => parseFloat(getComputedStyle(element).fontSize) >= 32))
+    assert.ok((await page.getByRole('link', { name: 'Download payment QR', exact: true }).boundingBox()).height >= 44)
+    await page.locator('.checkout-drawer').screenshot({ path: `test-results/payment-step-${width}.png` })
+  }
+  const downloadReady = page.waitForEvent('download')
+  await page.getByRole('link', { name: 'Download payment QR', exact: true }).click()
+  const download = await downloadReady
+  assert.equal(download.suggestedFilename(), 'tebu-payment-qr.jpeg')
+  assert.ok((await readFile(await download.path())).length > 0)
+  await page.route('**/api/orders/*/receipt-link', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Temporary link error' }) }), { times: 1 })
+  await page.getByRole('button', { name: 'Using a laptop? Upload from your phone', exact: true }).click()
+  await page.getByText('Temporary link error', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Try again', exact: true }).click()
   const phoneLink = page.getByRole('link', { name: 'Open receipt upload page', exact: true })
   await phoneLink.waitFor()
   const url = new URL(await phoneLink.getAttribute('href'))
-  const token = url.searchParams.get('t')
+  const token = url.pathname.split('/').pop()
+  assert.match(url.pathname, /^\/receipt\/[\w-]{43}$/)
   const authorization = `Receipt ${url.hash.slice(1)}`
   const sessionCookie=(await laptop.cookies()).find(cookie=>cookie.name==='tebu_customer_session')
   assert.ok(sessionCookie?.httpOnly)
+  const forwarded = await request(`/api/orders/${token}/receipt-link`, { method: 'POST', authorization: `Bearer ${sessionCookie.value}`, body: {}, headers: { 'X-Forwarded-Host': 'tebu.example.com', 'X-Forwarded-Proto': 'https' } })
+  assert.equal(forwarded.status, 200)
+  assert.equal(new URL(forwarded.data.url).origin, 'https://tebu.example.com')
+  assert.equal((await request(`/api/orders/${sharedOrder.data.token}/receipt-upload`, { authorization })).status, 403, 'Another order cannot reuse this upload credential')
+
   assert.equal(await page.evaluate(() => localStorage.getItem('customer_token')),null)
   assert.equal((await request(`/api/orders/${token}/receipt-link`, { method: 'POST', body: {} })).status, 401)
   assert.equal((await request(`/api/orders/${token}/receipt-upload`, { authorization: `Receipt ${'a'.repeat(43)}` })).status, 403)
@@ -115,7 +142,8 @@ try {
   await page.locator('.checkout-drawer').screenshot({ path: 'test-results/phone-upload-drawer.png' })
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const phonePage = await phone.newPage()
-  await phonePage.goto(url.toString())
+  const uploadPageResponse = await phonePage.goto(url.toString())
+  assert.match(uploadPageResponse.headers()['cache-control'], /no-store/)
   await phonePage.getByRole('heading', { name: 'Upload your receipt.', exact: true }).waitFor()
   assert.equal(await phonePage.locator('.bottom-nav, .app-header, .checkout-drawer').count(), 0, 'Phone page is receipt-only')
   // Some browsers return PNG when asked to encode WebP; exercise JPEG fallback end to end.
@@ -145,13 +173,14 @@ try {
   assert.equal(afterCheckout.remaining, initialDay.remaining - 3)
   const observer = await browser.newPage()
   await observer.goto(base, { waitUntil: 'networkidle' })
+  await observer.locator(`.week-date[data-date="${today}"]`).click()
   assert.equal(await observer.locator('.box-bottle:not(.box-bottle-vacant)').count(), afterCheckout.kecikUsed + afterCheckout.besarUsed, 'Another visitor sees the same daily reservations')
   await database.query('UPDATE schedules SET capacity = $1 WHERE id = $2', [afterCheckout.kecikUsed + 2 * afterCheckout.besarUsed, today])
   await observer.reload({ waitUntil: 'networkidle' })
   await observer.locator(`.week-date[data-date="${today}"]`).click()
   assert.equal(await observer.locator('.box-bottle-vacant').count(), 0, 'A full day has no empty spaces, even when size limits add up to more than its total capacity')
-  assert.equal(await observer.getByRole('button', { name: 'Add Botol Kecik', exact: true }).isDisabled(), true)
-  assert.equal(await observer.getByRole('button', { name: 'Add Botol Besar', exact: true }).isDisabled(), true)
+  assert.equal(await observer.getByRole('button', { name: 'Add Tebu 1 · Kecik', exact: true }).isDisabled(), true)
+  assert.equal(await observer.getByRole('button', { name: 'Add Tebu 1 · Besar', exact: true }).isDisabled(), true)
   await database.query('UPDATE schedules SET capacity = $1 WHERE id = $2', [initialDay.capacity, today])
   await database.query("UPDATE orders SET expires_at = now() - interval '1 minute' WHERE token = $1", [sharedOrder.data.token])
   const afterExpiry = (await request('/api/catalog')).data.days.find(day => day.id === today)

@@ -17,27 +17,3 @@ export function toExpense(row: DatabaseExpense): Expense {
 export function toHarvest(row: DatabaseHarvest): Harvest {
   return { id: row.id, date: row.date.toISOString().slice(0, 10), quantity: Number(row.quantity), type: row.type, varietyId: row.varietyId ?? undefined, kecikQty: row.kecikQty, besarQty: row.besarQty }
 }
-export async function saveHarvestRecord(data: z.infer<typeof harvestInput>, id?: string) {
-  return db().$transaction(async tx => {
-    if (id) await tx.$queryRaw`SELECT id FROM harvests WHERE id = ${id}::uuid FOR UPDATE`
-    const existing = id ? await tx.harvest.findUnique({ where: { id } }) : null
-    if (id && !existing) throw createError({ statusCode: 404, message: 'Harvest not found.' })
-    const ids = [data.varietyId, ...(existing?.varietyId ? [existing.varietyId] : [])]
-    await lockVarieties(tx, ids)
-    const variety = await tx.caneVariety.findUniqueOrThrow({ where: { id: data.varietyId } })
-    const values = { ...data, type: variety.name }
-    const row = id ? await tx.harvest.update({ where: { id }, data: values }) : await tx.harvest.create({ data: values })
-    await ensureStockNotOversold(tx, ids)
-    return toHarvest(row)
-  })
-}
-export async function removeHarvestRecord(id: string) {
-  return db().$transaction(async tx => {
-    await tx.$queryRaw`SELECT id FROM harvests WHERE id = ${id}::uuid FOR UPDATE`
-    const row = await tx.harvest.findUnique({ where: { id } })
-    if (!row) throw createError({ statusCode: 404, message: 'Harvest not found.' })
-    if (row.varietyId) await lockVarieties(tx, [row.varietyId])
-    await tx.harvest.delete({ where: { id } })
-    if (row.varietyId) await ensureStockNotOversold(tx, [row.varietyId])
-  })
-}

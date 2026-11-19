@@ -28,10 +28,51 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: Dependency security audit
+        run: npm audit --omit=dev --audit-level=moderate
       - name: Build server target
         run: npm run build
       - name: Build static demo target
         run: npm run generate
+
+  flows:
+    name: Database and browser flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tebu
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      NUXT_PUBLIC_DEMO: 'false'
+      NUXT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/tebu
+      NUXT_UPLOAD_STORAGE: local
+      NUXT_ADMIN_KEY: integration-test-admin-key-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Install backup client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: npm run build
+      - run: npm run test:flows
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: flow-test-results
+          path: test-results/
 
   secrets:
     name: No committed secrets

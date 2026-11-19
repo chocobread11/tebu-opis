@@ -12,9 +12,10 @@ export default defineEventHandler(async () => {
     return { id, ...boxAvailability(row?.capacity ?? 0, used ?? { kecik: 0, besar: 0 }), open: !!row?.open && !row.removedAt && !row.droppedAt && (testing ? id >= today : id > today) }
   }), week, new Date(), testing)
   const drops = days.filter(day => day.open).map(day => describeDrop(day.id, day.capacity, day.remaining))
-  const [products, varieties] = await Promise.all([
-    db().product.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, size: true, description: true, kind: true, price: true } }),
+  const [products, varieties, settings] = await Promise.all([
+    productCatalog(db()),
     catalogStock(db()),
+    shopSettings(),
   ])
-  return { week, days, drops, products, varieties }
+  return { week, days, drops, products, varieties, settings: publicShopSettings(settings) }
 })

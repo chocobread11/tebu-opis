@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ticketSummary } from '~/shared/domain'
 import { orderRemarksMaxLength } from '~/shared/order'
 import { Plus } from '~/lib/icons'
 import { NativeSelect, NativeSelectOption } from '~/components/ui/native-select'
@@ -12,27 +13,27 @@ const busy = ref(false)
 const error = ref('')
 const cancelling = ref<Ticket | null>(null)
 const requestId = ref('')
-const form = reactive({ name: '', phone: '', date: '', varietyId: '', paymentStatus: 'unpaid' as 'paid' | 'unpaid', cart: emptyCart(), remarks: '' })
+const form = reactive({ name: '', phone: '', date: '', paymentStatus: 'unpaid' as 'paid' | 'unpaid', cart: emptyCart(), remarks: '' })
 const orders = computed(() => admin.orders.value.filter(order => order.scheduleId === props.scheduleId && order.manualPaymentStatus))
 function start() {
-  Object.assign(form, { name: '', phone: '', date: props.scheduleId || malaysiaToday(), varietyId: admin.varieties.value[0]?.id || '', paymentStatus: 'unpaid', cart: emptyCart(), remarks: '' })
+  Object.assign(form, { name: '', phone: '', date: props.scheduleId || malaysiaToday(), paymentStatus: 'unpaid', cart: emptyCart(shop.products), remarks: '' })
   requestId.value = crypto.randomUUID(); error.value = ''; open.value = true
 }
 async function save() {
   if (busy.value) return
-  if (!form.name.trim() || !form.date || !bottleCount(form.cart)) { error.value = 'Enter a customer, date and at least one bottle.'; return }
+  if (!form.name.trim() || !form.date || !bottleCount(form.cart, shop.products)) { error.value = 'Enter a customer, date and at least one main product.'; return }
   busy.value = true; error.value = ''
   try {
     if (admin.local) {
-      const used = admin.orders.value.filter(order => order.scheduleId === form.date && order.status !== 'rejected' && (order.status !== 'pending_payment' || !!order.expiresAt && new Date(order.expiresAt).getTime() > Date.now())).reduce((sum, order) => sum + bottleSpaces(order.cart), 0)
+      const used = admin.orders.value.filter(order => order.scheduleId === form.date && order.status !== 'rejected' && (order.status !== 'pending_payment' || !!order.expiresAt && new Date(order.expiresAt).getTime() > Date.now())).reduce((sum, order) => sum + bottleSpaces(order.cart, shop.products), 0)
       const capacity = shop.days.value.find(day => day.id === form.date)?.capacity ?? dailyBottleCapacity
-      if (used + bottleSpaces(form.cart) > capacity) throw new Error('This box does not have enough space. Kecik uses 1 space and Besar uses 2.')
+      if (used + bottleSpaces(form.cart, shop.products) > capacity) throw new Error('This box does not have enough space for these items.')
       const phone = form.phone ? normalizePhone(form.phone) : ''
       const sequence = admin.orders.value.filter(order => order.scheduleId === form.date).length + 1
-      admin.orders.value.unshift({ token: crypto.randomUUID(), tag: `#A${String(sequence).padStart(2, '0')}`, name: form.name.trim(), phone, scheduleId: form.date, varietyId: form.varietyId, varietyName: admin.varieties.value.find(v => v.id === form.varietyId)?.name, cart: { ...form.cart }, remarks: form.remarks.trim() || undefined, total: total(form.cart, shop.products), status: 'confirmed', manualPaymentStatus: form.paymentStatus, packed: false, notified: false, createdAt: new Date().toISOString() })
+      admin.orders.value.unshift({ token: crypto.randomUUID(), tag: `#A${String(sequence).padStart(2, '0')}`, name: form.name.trim(), phone, scheduleId: form.date, items: shop.products.filter(p=>(form.cart[p.id] ?? 0)>0).map(p=>({productId:p.id,name:p.name,size:p.size,kind:p.kind,spaceCost:p.spaceCost ?? 0,quantity:form.cart[p.id] ?? 0,unitPrice:p.price})), cart: { ...form.cart }, remarks: form.remarks.trim() || undefined, total: total(form.cart, shop.products), status: 'confirmed', manualPaymentStatus: form.paymentStatus, packed: false, notified: false, createdAt: new Date().toISOString() })
       admin.persist()
     } else {
-      await $fetch('/api/admin/orders', { method: 'POST', headers: admin.headers.value, body: { requestId: requestId.value, scheduleId: form.date, name: form.name, phone: form.phone, varietyId: form.varietyId, paymentStatus: form.paymentStatus, remarks: form.remarks.trim() || null, cart: form.cart } })
+      await $fetch('/api/admin/orders', { method: 'POST', headers: admin.headers.value, body: { requestId: requestId.value, scheduleId: form.date, name: form.name, phone: form.phone, paymentStatus: form.paymentStatus, remarks: form.remarks.trim() || null, cart: Object.fromEntries(Object.entries(form.cart).filter(([,quantity])=>quantity>0)) } })
       await admin.refresh()
     }
     open.value = false; emit('changed'); shop.notify('Manual order saved. Inventory updated.')
@@ -58,7 +59,7 @@ async function update(order: Ticket, cancel = false) {
     <p v-if="error && !open && !cancelling" class="error" role="alert">{{ error }}</p>
     <article v-for="order in createOnly ? [] : orders" :key="order.token" class="review-card">
       <div class="review-head"><strong>{{ order.tag }} · {{ order.name }}</strong><b>{{ money(order.total) }}</b></div>
-      <p>{{ order.varietyName }} · {{ cartSummary(order.cart, shop.products) }}</p><OrderRemarks :value="order.remarks" compact />
+      <p><span v-if="order.varietyName">{{ order.varietyName }} · </span>{{ ticketSummary(order) }}</p><OrderRemarks :value="order.remarks" compact />
       <div class="review-actions"><span class="ops-badge">{{ order.status === 'rejected' ? 'Cancelled' : order.manualPaymentStatus === 'paid' ? 'Paid' : 'Unpaid' }}</span><template v-if="order.status !== 'rejected'"><button class="text-button danger" :disabled="busy" @click="error = ''; cancelling = order">Cancel order</button><button class="secondary" :disabled="busy" @click="update(order)">Mark {{ order.manualPaymentStatus === 'paid' ? 'unpaid' : 'paid' }}</button></template></div>
     </article>
     <RecordDialog :busy="busy" :open="open" title="Add manual order" description="Record an offline sale, reserve bottles and track payment. Phone is optional." @update:open="value => { if (!busy) open = value }">
@@ -66,7 +67,6 @@ async function update(order: Ticket, cancel = false) {
         <div><label class="field-label" for="manual-name">Customer name</label><input id="manual-name" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" v-model="form.name" maxlength="80" required /></div>
         <div><label class="field-label" for="manual-phone">Phone (optional)</label><input id="manual-phone" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" v-model="form.phone" type="tel" placeholder="012 345 6789" /></div>
         <div><label class="field-label" for="manual-date">Order date</label><input id="manual-date" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" v-model="form.date" type="date" required /></div>
-        <div><label class="field-label" for="manual-variety">Tebu variety</label><NativeSelect id="manual-variety" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" v-model="form.varietyId" required><NativeSelectOption v-for="variety in admin.varieties.value" :key="variety.id" :value="variety.id">{{ variety.name }} · {{ variety.kecikRemaining }} small / {{ variety.besarRemaining }} big available</NativeSelectOption></NativeSelect></div>
         <div v-for="product in shop.products" :key="product.id"><label class="field-label" :for="`manual-${product.id}`">{{ product.name }} ({{ product.size }}) · {{ money(product.price) }}</label><NumberInput :id="`manual-${product.id}`" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" v-model="form.cart[product.id]" :label="product.name" :min="0" :max="10000" required /></div>
         <div><label class="field-label" for="manual-remarks">Remarks (optional)</label><textarea id="manual-remarks" v-model="form.remarks" class="input order-remarks-input" rows="3" :maxlength="orderRemarksMaxLength" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" /></div>
         <div><label class="field-label" for="manual-payment">Payment status</label><NativeSelect id="manual-payment" :aria-invalid="!!error" :aria-describedby="error ? 'manual-order-error' : undefined" v-model="form.paymentStatus"><NativeSelectOption value="unpaid">Unpaid</NativeSelectOption><NativeSelectOption value="paid">Paid</NativeSelectOption></NativeSelect></div>

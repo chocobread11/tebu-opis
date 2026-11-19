@@ -3,15 +3,15 @@ import { ArrowRight, ChevronDown, Zap } from '~/lib/icons'
 import { bottleCount, money } from '~/shared/domain'
 
 const shop = useShop()
-const items = computed(() => shop.products.filter(product => shop.cart.value[product.id] > 0).map(product => ({
+const items = computed(() => shop.products.filter(product => (shop.cart.value[product.id] ?? 0) > 0).map(product => ({
   ...product,
-  quantity: shop.cart.value[product.id],
-  lineTotal: product.price * shop.cart.value[product.id],
+  quantity: shop.cart.value[product.id] ?? 0,
+  lineTotal: product.price * (shop.cart.value[product.id] ?? 0),
 })))
 const hasItems = computed(() => items.value.length > 0)
 const itemCount = computed(() => items.value.reduce((sum, item) => sum + item.quantity, 0))
 const chosen = computed(() => shop.drops.value.find(drop => drop.id === shop.selected.value))
-const count = computed(() => bottleCount(shop.cart.value))
+const count = computed(() => bottleCount(shop.cart.value, shop.products))
 const detailsOpen = ref(false)
 const detailsId = useId()
 watch(itemCount, (value, previous) => {
@@ -20,10 +20,9 @@ watch(itemCount, (value, previous) => {
 }, { immediate: true })
 
 function checkout() {
-  if (!count.value) return shop.notify('Add Botol Kecik or Botol Besar to get started.')
+  if (!count.value) return shop.notify('Add a main product to get started.')
   if (!chosen.value || !chosen.value.remaining) return shop.notify('Choose an open delivery date from the calendar.')
-  if (!shop.variety.value) return shop.notify('Choose your tebu variety.')
-  if (shop.cart.value.kecik > shop.available('kecik') || shop.cart.value.besar > shop.available('besar')) return shop.notify('Stock has changed. Adjust your bottle quantity.')
+  if (items.value.some(p => p.quantity > shop.available(p.id))) return shop.notify('Stock has changed. Adjust your bottle quantity.')
   shop.checkoutOpen.value = true
 }
 </script>

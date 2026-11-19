@@ -37,7 +37,7 @@ try {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(baseUrl)
-    for (const [name, price] of [['Botol Kecik', 6], ['Botol Besar', 11], ['Asam Boi', 1], ['Limau Kasturi', 1]]) {
+    for (const [name, price] of [['Tebu 1 · Kecik', 6], ['Tebu 1 · Besar', 11], ['Asam Boi', 1], ['Limau Kasturi', 1]]) {
       const control = page.getByRole('group', { name: `${name} quantity`, exact: true })
       const plus = control.locator('.quantity-increase')
       const minus = control.locator('.quantity-decrease')

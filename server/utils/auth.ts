@@ -3,11 +3,12 @@ import type { H3Event } from 'h3'
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
 export const newToken = () => randomBytes(32).toString('base64url')
 export function bearer(event: H3Event) { return getHeader(event, 'authorization')?.match(/^Bearer (\S+)$/)?.[1] || '' }
-export function isAdmin(event: H3Event) {
+export function isAdminKey(event: H3Event) {
   const key = String(useRuntimeConfig().adminKey ?? '')
   if (!key || (!import.meta.dev && key.length < 32)) return false
   return timingSafeEqual(Buffer.from(hashToken(key)), Buffer.from(hashToken(bearer(event))))
 }
+export function isAdmin(event: H3Event) { return isAdminKey(event) || !!event.context.adminSession }
 export function requireAdmin(event: H3Event) { if (!isAdmin(event)) throw createError({ statusCode: 401, message: 'A valid admin key is required.' }) }
 export async function requireCustomer(event: H3Event) {
   const token = customerAccessToken(event)

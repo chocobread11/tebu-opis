@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { MapPin, CalendarDays, PackageCheck, Copy, RefreshCw, ArrowLeft, History, LoaderCircle, MessageCircle } from '~/lib/icons'
+import { reservationExpired } from '~/shared/order'
 import { money, products, ticketStatusLabel, type Ticket } from '~/shared/domain'
 const route = useRoute()
 const shop = useShop()
-const config = useRuntimeConfig()
 const ticket = ref<Ticket | null>(null)
+const now=ref(Date.now())
+const expired=computed(()=>!!ticket.value&&reservationExpired(ticket.value,now.value))
+let expiryTimer:ReturnType<typeof setInterval>|undefined
 const disputeUrl = computed(() => {
-  const phone = String(config.public.supportWhatsapp || '').replace(/\D/g, '')
+  const phone = String(shop.publicSettings.value.supportWhatsapp || '').replace(/\D/g, '')
   if (!ticket.value || !/^60\d{8,11}$/.test(phone)) return ''
   const message = `Hi, I need help with my Tebu Drop order ${ticket.value.tag} (${ticket.value.scheduleId}).\nName: ${ticket.value.name}\nIssue: `
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
 })
-const ticketItems = computed(() => ticket.value?.items ?? products.filter(product => ticket.value?.cart[product.id]).map(product => ({ productId: product.id, name: product.name, size: product.size, quantity: ticket.value!.cart[product.id], unitPrice: product.price })))
+const ticketItems = computed(() => ticket.value?.items ?? products.filter(product => ticket.value?.cart[product.id]).map(product => ({ productId: product.id, name: product.name, size: product.size, quantity: ticket.value!.cart[product.id] ?? 0, unitPrice: product.price })))
 const loading = ref(true)
 const error = ref('')
 const busy = ref(false)
@@ -35,11 +38,12 @@ function onStorage(event: StorageEvent) { if (event.key === 'tebu_demo_orders' &
 let poll: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
   loadTicket()
+  expiryTimer=setInterval(()=>{now.value=Date.now()},1000)
   poll = setInterval(onVisible, 5000)
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('storage', onStorage)
 })
-onBeforeUnmount(() => { requestVersion++; clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('storage', onStorage) })
+onBeforeUnmount(() => { requestVersion++; clearInterval(poll);clearInterval(expiryTimer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('storage', onStorage) })
 watch(() => route.query.t, () => { if (import.meta.client) loadTicket() })
 watch(shop.checkoutOpen, open => { if (!open && route.query.t) loadTicket() })
 watch(() => ticket.value?.status, status => { if (status !== 'ready') confirmCollect.value = false })
@@ -92,17 +96,19 @@ async function copyLink() { try { await navigator.clipboard.writeText(`${locatio
             <span class="status-pill">{{ ticketStatusLabel(ticket).toUpperCase() }}</span>
           </header>
           <div class="detail-row"><CalendarDays aria-hidden="true" :size="18" /><div><strong>{{ dateLabel }}</strong><span>Collect from 9:00 AM, once your ticket says ready.</span></div></div>
-          <div class="detail-row"><MapPin aria-hidden="true" :size="18" /><div><strong>Level 7 pantry freezer</strong><span>Look for the paper bag with your tag.<br>Keep frozen until you’re ready to enjoy.</span></div></div>
+          <div class="detail-row"><MapPin aria-hidden="true" :size="18" /><div><strong>Level 7 pantry freezer</strong><span>Look for the plastic bag with your tag and name.<br>Keep frozen until you’re ready to enjoy.</span></div></div>
           <div class="ticket-items">
             <div v-for="p in ticketItems" :key="p.productId" class="ticket-item"><span>{{ p.quantity }} × {{ p.name }} <small>({{ p.size }})</small></span><strong>{{ money(p.unitPrice * p.quantity) }}</strong></div>
             <div class="ticket-total"><span>Total</span><span>{{ money(ticket.total) }}</span></div>
           </div>
           <OrderRemarks :value="ticket.remarks" />
           <div class="ticket-actions">
-            <template v-if="ticket.status === 'pending_payment'"><p class="ticket-note">Your order is awaiting a payment receipt. Upload the receipt after paying to submit it for verification.</p><button class="primary" :disabled="busy" @click="resumeReceipt">Upload payment receipt</button></template>
+            <template v-if="ticket.status === 'pending_payment' && !expired"><p class="ticket-note">Your order is awaiting a payment receipt. Upload the receipt after paying to submit it for verification.</p><button class="primary" :disabled="busy" @click="resumeReceipt">Upload payment receipt</button></template>
+            <div v-if="expired" class="reservation-status reservation-expired"><strong>Reservation expired</strong><p>These items are no longer reserved. Start a new order to check availability.</p><NuxtLink to="/" class="secondary">Start new order</NuxtLink><a v-if="disputeUrl" :href="disputeUrl" class="text-button" target="_blank" rel="noopener noreferrer">I already paid — contact operator</a></div>
+            <p v-if="ticket.refundedTotal" class="ticket-note">Refund recorded: {{money(ticket.refundedTotal)}}. {{ticket.fulfilled?'Collected items remain in your order history.':''}}</p>
             <p v-if="ticket.status === 'pending_review'" class="ticket-note">Your receipt is awaiting the operator’s check. Refresh this ticket for updates. Your bottle is ready to collect only after the pantry drop.</p>
             <p v-if="ticket.status === 'confirmed'" class="ticket-note">{{ ticket.packed ? 'Your order is packed. We’ll update this ticket when it reaches the pantry freezer.' : 'Payment checked. Your order is waiting to be packed.' }}</p>
-            <p v-if="ticket.status === 'rejected'" class="error">The operator could not verify this payment. Contact the pantry operator with your tag before placing another order.</p>
+            <p v-if="ticket.status === 'rejected'" class="error">{{ticket.cancellationReason||'The operator could not verify this payment. Contact the pantry operator with your tag before placing another order.'}}</p>
             <p v-if="ticket.status === 'collected'" class="ticket-note">All picked up. Thaw in the fridge, give it a good shake, and enjoy cold. See you at the next drop.</p>
           </div>
           <div class="ticket-links"><button @click="copyLink"><Copy aria-hidden="true" :size="13" />Save private link</button><button :disabled="busy" @click="loadTicket()"><RefreshCw aria-hidden="true" :size="13" />Refresh status</button></div>

@@ -1,6 +1,7 @@
 import { normalizePhone } from '~/shared/domain'
 import { customerSessionLifetime } from '~/shared/session'
 type Identity = { found: boolean; passwordRequired: boolean; token?: string; name?: string; phone?: string; protected?: boolean; expiresAt?: string }
+type CheckoutIdentity = { phone: string; name: string; protected: boolean; historyUnlocked: boolean }
 type DemoCustomer = { name: string; token: string; salt?: string; passwordHash?: string }
 async function demoHash(password: string, salt: string) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
@@ -89,10 +90,29 @@ export function useCustomerAccess() {
     }
     protectedHistory.value = password !== null
   }
+  async function startCheckout(input: { phone: string; name: string }) {
+    const phone = normalizePhone(input.phone)
+    let result: CheckoutIdentity
+    if (shop.demo) {
+      const records = demoCustomers()
+      const record = records[phone] ||= { name: input.name, token: crypto.randomUUID() }
+      localStorage.setItem('tebu_demo_customers', JSON.stringify(records))
+      const session = demoSession()
+      const historyUnlocked = !record.passwordHash || session?.phone === phone
+      if (historyUnlocked) remember({ found: true, passwordRequired: false, name: record.name, phone, token: record.token, protected: !!record.passwordHash, expiresAt: session?.phone === phone ? session.expiresAt : new Date(Date.now() + customerSessionLifetime).toISOString() })
+      else localStorage.removeItem('tebu_demo_session')
+      result = { phone, name: input.name, protected: !!record.passwordHash, historyUnlocked }
+    } else result = await $fetch<CheckoutIdentity>('/api/checkout', { method: 'POST', body: { ...input, phone } })
+    if (!shop.demo && (shop.customerPhone.value !== phone || !result.historyUnlocked)) shop.tickets.value = []
+    shop.customerPhone.value = phone; shop.customerName.value = input.name; shop.customerToken.value = ''
+    localStorage.setItem('customer_phone', phone); localStorage.setItem('customer_name', input.name); localStorage.removeItem('customer_token')
+    protectedHistory.value = result.protected; unlockedPhone.value = result.historyUnlocked ? phone : ''
+    return result
+  }
   async function signOut() {
     if (!shop.demo) await $fetch('/api/identity/logout', { method: 'POST', body: {} })
     localStorage.removeItem('tebu_demo_session'); localStorage.removeItem('customer_token'); localStorage.removeItem('customer_name')
     shop.customerToken.value = ''; shop.customerName.value = ''; shop.tickets.value = []; unlockedPhone.value = ''
   }
-  return { identify, lookup, protectedHistory, unlockedPhone, setProtection, signOut, demoSession }
+  return { identify, startCheckout, lookup, protectedHistory, unlockedPhone, setProtection, signOut, demoSession }
 }

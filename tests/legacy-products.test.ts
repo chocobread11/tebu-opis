@@ -12,8 +12,8 @@ test('old browser carts and ticket items retain quantities and checkout prices',
   assert.deepEqual(migrated.cart, { kecik: 2, besar: 1, asam: 1, limau: 0 })
   assert.equal(migrated.total, legacy.total)
   assert.deepEqual(migrated.items, [
-    { productId: 'kecik', name: 'Botol Kecik', size: '500ml', quantity: 2, unitPrice: 625 },
-    { productId: 'besar', name: 'Botol Besar', size: '1l', quantity: 1, unitPrice: 1025 },
+    { productId: 'kecik', name: 'Tebu 1 · The Everyday Flask', size: '500ml', quantity: 2, unitPrice: 625 },
+    { productId: 'besar', name: 'Tebu 1 · The Sharing Jug', size: '1l', quantity: 1, unitPrice: 1025 },
   ])
   assert.deepEqual(migrateStoredTicket(migrated), migrated)
   assert.deepEqual(migrateStoredCart({ kecik: 0, besar: 2, flask: 3, jug: 4 }), { kecik: 0, besar: 2, asam: 0, limau: 0 })

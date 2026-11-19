@@ -1,3 +1,4 @@
+import { migrateStoredTicket } from '../shared/legacy-products'
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile, unlink } from 'node:fs/promises'
@@ -5,7 +6,7 @@ import { resolve } from 'node:path'
 import sharp from 'sharp'
 import { createDatabase } from '../server/db/client'
 import { malaysiaToday, products, total, bottleCount, bottleSpaces, type Cart, type Ticket } from '../shared/domain'
-import { dailyBottleUsage, catalogStock } from '../server/utils/inventory'
+import { dailyBottleUsage } from '../server/utils/inventory'
 import { sampleToken } from './seed-data'
 import { developmentSeedRange } from './seed-range'
 
@@ -41,22 +42,25 @@ try {
       await tx.order.updateMany({ data: { receiptId: null } })
       await tx.schedule.updateMany({ data: { photoId: null } })
       await tx.media.deleteMany()
+      await tx.telegramNotification.deleteMany()
+      await tx.refund.deleteMany()
+      await tx.auditEvent.deleteMany()
       await tx.order.deleteMany()
+      await tx.adminSession.deleteMany()
       await tx.customerSession.deleteMany()
       await tx.customer.deleteMany()
       await tx.expense.deleteMany()
+      await tx.stockEntry.deleteMany()
       await tx.harvest.deleteMany()
       await tx.schedule.deleteMany()
+      await tx.stockEntry.deleteMany()
       await tx.product.deleteMany()
       await tx.caneVariety.deleteMany()
     }
     for (const [sortOrder, product] of products.entries()) await tx.product.upsert({ where: { id: product.id }, update: {}, create: { ...product, sortOrder } })
-    for (let index = 0; index < 2; index++) {
-      const varietyId = `tebu-${index + 1}`
-      const variety = await tx.caneVariety.upsert({ where: { id: varietyId }, update: {}, create: { id: varietyId, name: `Tebu ${index + 1}`, sortOrder: index } })
-      await tx.harvest.upsert({ where: { id: fixtureId(`harvest-${index}`) }, update: { type: variety.name }, create: { id: fixtureId(`harvest-${index}`), date: new Date(`${today}T00:00:00Z`), type: variety.name, varietyId, quantity: index ? 18 : 24, kecikQty: 60, besarQty: 30 } })
+    for (const [index, p] of products.filter(p => p.kind === 'bottle').entries()) {
+      await tx.stockEntry.upsert({ where: { id: fixtureId(`restock-${index}`) }, update: {}, create: { id: fixtureId(`restock-${index}`), productId: p.id, date: new Date(`${today}T00:00:00Z`), quantity: p.spaceCost === 2 ? 30 : 60, note: 'Sample starting stock' } })
     }
-    const varieties = await tx.caneVariety.findMany()
     for (const [index, name] of names.entries()) {
       const id = fixtureId(`customer-${index}`)
       const phone = '6011' + String(parseInt(createHash('sha256').update(week.start).digest('hex').slice(0, 8), 16) % 1_000_000).padStart(6, '0') + String(index).padStart(2, '0')
@@ -75,36 +79,33 @@ try {
       if (!schedule.open || schedule.removedAt || schedule.droppedAt) continue
       await tx.$queryRaw`SELECT id FROM schedules WHERE id = ${scheduleId} FOR UPDATE`
       const usage = await dailyBottleUsage(tx, scheduleId)
-      let spaceLeft = Math.max(0, schedule.capacity - bottleSpaces(usage))
+      let spaceLeft = Math.max(0, schedule.capacity - usage.spaces)
       const last = await tx.order.aggregate({ where: { scheduleId }, _max: { sequence: true } })
       let sequence = last._max.sequence ?? 0
       for (let index = 0; index < 8; index++) {
         const id = fixtureId(`order-${scheduleId}-${index}`)
         const existing = await tx.order.findUnique({ where: { id } })
-        if (existing) {
-          await tx.order.update({ where: { id }, data: { varietyName: varieties.find(v => v.id === existing.varietyId)?.name } })
-          continue
-        }
+        if (existing) continue
         const expired = index === 6
         let status: Ticket['status'] = index === 7 ? 'rejected' : index === 5 || expired ? 'pending_payment' : index === 4 ? 'pending_review' : 'confirmed'
         if (scheduleId <= today && index === 0) status = 'collected'
         if (scheduleId <= today && index === 1) status = 'ready'
-        const cart: Cart = { kecik: index % 3 === 1 ? 0 : 1, besar: index % 3 === 1 ? 1 : 0, asam: index % 2, limau: (index + dayIndex) % 2 }
+        const varietyId = `tebu-${(index + dayIndex) % 2 + 1}`
+        const cart: Cart = migrateStoredTicket({ varietyId, cart: { kecik: index % 3 === 1 ? 0 : 1, besar: index % 3 === 1 ? 1 : 0, asam: index % 2, limau: (index + dayIndex) % 2 } } as unknown as Ticket).cart
         if (status !== 'rejected' && !expired) {
           if (bottleSpaces(cart) > spaceLeft) status = 'rejected'
           else spaceLeft -= bottleSpaces(cart)
         }
         sequence++
         const customer = (dayIndex * 3 + index) % names.length
-        const varietyId = `tebu-${(index + dayIndex) % 2 + 1}`
         const createdAt = new Date(Math.min(now.getTime(), new Date(`${scheduleId}T08:00:00+08:00`).getTime()) - (8 - index) * 12 * 60_000)
         const receiptId = status !== 'pending_payment' ? fixtureId(`receipt-${scheduleId}-${index}`) : null
         await tx.order.create({ data: {
           id, token: sampleToken(id), requestId: fixtureId(`request-${scheduleId}-${index}`), customerId: fixtureId(`customer-${customer}`),
-          scheduleId, sequence, tag: `#A${String(sequence).padStart(2, '0')}`, cart, bottles: bottleCount(cart), total: total(cart), status,
-          varietyId, varietyName: varieties.find(v => v.id === varietyId)!.name, packed: ['ready', 'collected'].includes(status) || status === 'confirmed' && index === 2,
+          scheduleId, sequence, cart, bottles: bottleCount(cart), total: total(cart), status,fulfilled:status==='collected',
+          packed: ['ready', 'collected'].includes(status) || status === 'confirmed' && index === 2,
           notified: ['ready', 'collected'].includes(status), createdAt, expiresAt: new Date(now.getTime() + (expired ? -60 : 20) * 60_000),
-          items: { create: products.filter(p => cart[p.id]).map(p => ({ productId: p.id, quantity: cart[p.id], unitPrice: p.price })) },
+          items: { create: products.filter(p => cart[p.id]).map(p => ({ productId: p.id, quantity: cart[p.id] ?? 0, unitPrice: p.price, name: p.name, size: p.size, kind: p.kind, spaceCost: p.spaceCost ?? 0 })) },
         } })
         if (receiptId) {
           await tx.media.create({ data: { id: receiptId, filename, kind: 'receipt', orderId: id } })
@@ -121,6 +122,6 @@ try {
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     }
   }
-  console.log(`Development samples ready for ${week.label}: ${added} new orders, 12 sample customers, 2 harvests, 9 expenses. ${reset ? 'Previous database records purged.' : 'Existing data and closures preserved.'}`)
-  console.log(JSON.stringify({ orders: await database.order.groupBy({ by: ['scheduleId', 'status'], where: { scheduleId: { gte: week.start, lte: week.end } }, _count: true }), stock: await catalogStock(database) }, null, 2))
+  console.log(`Development samples ready for ${week.label}: ${added} new orders, 12 sample customers, 4 restocks, 9 expenses. ${reset ? 'Previous database records purged.' : 'Existing data and closures preserved.'}`)
+  console.log(JSON.stringify({ orders: await database.order.groupBy({ by: ['scheduleId', 'status'], where: { scheduleId: { gte: week.start, lte: week.end } }, _count: true }), stock: await database.stockEntry.findMany() }, null, 2))
 } finally { await database.$disconnect() }

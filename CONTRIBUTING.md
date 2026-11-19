@@ -35,14 +35,14 @@ NUXT_PUBLIC_DEMO=true npm run dev
 npm run typecheck
 npm test
 npm run build
-node tests/server.mjs     # requires `npm run generate` first
+npm run test:flows      # requires the server build and local Postgres
 ```
 
 If your change touches checkout, capacity or scheduling, also run the database
 integration suite against a Postgres you control:
 
 ```sh
-npm run test:database
+npm run test:flows
 ```
 
 ## Pull request guidelines

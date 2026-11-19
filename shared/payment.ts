@@ -3,7 +3,7 @@ import type { Ticket } from './domain'
 export const paymentStatuses = ['unpaid', 'review', 'paid', 'rejected'] as const
 export type PaymentStatus = typeof paymentStatuses[number]
 export const paymentLabels: Record<PaymentStatus, string> = { unpaid: 'Unpaid', review: 'To review', paid: 'Paid', rejected: 'Rejected' }
-type PaymentOrder = { status: string; manualPaymentStatus?: string | null; receiptId?: string | null }
+type PaymentOrder = { status: string; manualPaymentStatus?: string | null; receiptId?: string | null; fulfilled?: boolean; refundedTotal?: number }
 
 export function paymentStatus(order: PaymentOrder): PaymentStatus {
   if (order.status === 'rejected') return 'rejected'
@@ -14,6 +14,8 @@ export function paymentLabel(order: PaymentOrder) {
   return order.manualPaymentStatus && order.status === 'rejected' ? 'Cancelled' : paymentLabels[paymentStatus(order)]
 }
 export function paymentOptions(order: PaymentOrder): PaymentStatus[] {
+  if(order.refundedTotal)return []
+  if(!order.manualPaymentStatus&&(order.fulfilled||order.status==='collected'))return ['paid']
   if (order.manualPaymentStatus) return order.status === 'rejected' ? [] : ['unpaid', 'paid']
   return paymentStatuses.filter(status => status !== 'review' || !!order.receiptId || order.status === 'pending_review')
 }

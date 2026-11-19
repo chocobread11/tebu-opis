@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { orderRemarksMaxLength } from '~/shared/order'
 import { NativeSelect, NativeSelectOption } from '~/components/ui/native-select'
-import { emptyCart, bottleCount, bottleSpaces, dailyBottleCapacity, money, ticketStatusLabel, type Ticket } from '~/shared/domain'
+import { sameCart, emptyCart, bottleCount, bottleSpaces, dailyBottleCapacity, money, ticketStatusLabel, type Ticket } from '~/shared/domain'
 import { paymentStatus, paymentLabels, paymentStatuses, paymentChanges, type PaymentStatus } from '~/shared/payment'
 import { RefreshCw } from '~/lib/icons'
 const props = defineProps<{ scheduleId: string; revision: number }>()
 const emit = defineEmits<{ changed: [] }>()
 const admin = useAdmin()
 const shop = useShop()
+const route = useRoute()
+const linkedLoading = ref(false), linkedError = ref('')
+let linkedRequest = 0
 const search = ref('')
 const scope = ref('all')
 const payment = ref<PaymentStatus | 'all'>('all')
@@ -23,15 +26,17 @@ const paymentError = ref('')
 const editing = ref<Ticket | null>(null)
 const deleting = ref<Ticket | null>(null)
 const details = ref<Ticket | null>(null)
-const form = reactive({ name: '', scheduleId: '', varietyId: '', status: 'confirmed' as Ticket['status'], paymentStatus: 'paid', remarks: '', cart: emptyCart() })
+const form = reactive({ name: '', scheduleId: '', status: 'confirmed' as Ticket['status'], paymentStatus: 'paid', remarks: '', cart: emptyCart() })
 const statuses: Ticket['status'][] = ['pending_payment', 'pending_review', 'confirmed', 'ready', 'collected', 'rejected']
 const statusLabel = (status: Ticket['status']) => status.replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase())
 const pages = computed(() => Math.max(1, Math.ceil(total.value / Number(pageSize.value))))
 const start = computed(() => total.value ? (page.value - 1) * Number(pageSize.value) + 1 : 0)
-const editTotal = computed(() => shop.products.reduce((sum, product) => sum + form.cart[product.id] * (editing.value?.items?.find(item => item.productId === product.id)?.unitPrice ?? product.price), 0))
+const editTotal = computed(() => admin.products.value.reduce((sum, product) => sum + (form.cart[product.id] || 0) * (editing.value?.items?.find(item => item.productId === product.id)?.unitPrice ?? product.price), 0))
 let request = 0
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 async function load() {
+  // Every refresh already includes the current search; cancel a redundant debounce.
+  clearTimeout(searchTimer)
   const current = ++request
   loading.value = true; error.value = ''
   try {
@@ -55,11 +60,26 @@ watch([scope, pageSize, payment], reset)
 watch(page, load)
 watch(() => props.scheduleId, () => { scope.value = 'day'; reset() })
 watch(() => props.revision, load)
-onMounted(load)
-onBeforeUnmount(() => { request++; clearTimeout(searchTimer) })
+async function openLinkedOrder() {
+  const current = ++linkedRequest
+  const token = typeof route.query.order === 'string' ? route.query.order : ''
+  linkedError.value = ''; linkedLoading.value = false
+  if (!token) return
+  linkedLoading.value = true
+  try {
+    const order = admin.local ? admin.orders.value.find(order => order.token === token) : await $fetch<Ticket>(`/api/admin/orders/${encodeURIComponent(token)}`, { headers: admin.headers.value })
+    if (current !== linkedRequest) return
+    if (!order) throw new Error('This linked order was not found.')
+    openDetails(order)
+  } catch (e: any) { if (current === linkedRequest) linkedError.value = e.data?.message || e.message || 'Could not open the linked order.' }
+  finally { if (current === linkedRequest) linkedLoading.value = false }
+}
+watch(() => route.query.order, openLinkedOrder)
+onMounted(() => { load(); openLinkedOrder() })
+onBeforeUnmount(() => { request++; linkedRequest++; clearTimeout(searchTimer) })
 function edit(order: Ticket) {
   formError.value = ''
-  Object.assign(form, { name: order.name, remarks: order.remarks || '', scheduleId: order.scheduleId, varietyId: order.varietyId || admin.varieties.value[0]?.id || '', status: order.status, paymentStatus: order.manualPaymentStatus || 'paid', cart: { ...order.cart } })
+  Object.assign(form, { name: order.name, remarks: order.remarks || '', scheduleId: order.scheduleId, status: order.status, paymentStatus: order.manualPaymentStatus || 'paid', cart: { ...emptyCart(admin.products.value), ...order.cart } })
   editing.value = order
 }
 function openDetails(order: Ticket) { paymentError.value = ''; details.value = order }
@@ -76,19 +96,19 @@ function persistDemo() {
 async function saved() { await load(); emit('changed') }
 async function save() {
   if (!editing.value || busy.value) return
-  if (!form.name.trim() || !form.scheduleId || !form.varietyId || !bottleCount(form.cart)) { formError.value = 'Enter a customer, date, variety and at least one bottle.'; return }
+  if (!form.name.trim() || !form.scheduleId || !bottleCount(form.cart, admin.products.value)) { formError.value = 'Enter a customer, date and at least one main product.'; return }
   busy.value = true; formError.value = ''; admin.invalidate()
   try {
     if (admin.local) {
       const order = admin.orders.value.find(row => row.token === editing.value!.token)!
-      const changed = order.scheduleId !== form.scheduleId || order.varietyId !== form.varietyId || JSON.stringify(order.cart) !== JSON.stringify(form.cart)
+      const changed = order.scheduleId !== form.scheduleId || !sameCart(order.cart,form.cart)
       const used = admin.orders.value.filter(row => row.token !== order.token && row.scheduleId === form.scheduleId && row.status !== 'rejected' && (row.status !== 'pending_payment' || !!row.expiresAt && new Date(row.expiresAt).getTime() > Date.now()))
       const day = shop.days.value.find(row => row.id === form.scheduleId)
-      if (form.status !== 'rejected' && used.reduce((sum, row) => sum + bottleSpaces(row.cart), 0) + bottleSpaces(form.cart) > (day?.capacity ?? dailyBottleCapacity)) throw new Error('This date does not have enough bottle capacity.')
+      if (form.status !== 'rejected' && used.reduce((sum, row) => sum + bottleSpaces(row.cart, admin.products.value), 0) + bottleSpaces(form.cart, admin.products.value) > (day?.capacity ?? dailyBottleCapacity)) throw new Error('This date does not have enough bottle capacity.')
       if (order.scheduleId !== form.scheduleId) { const sequence = Math.max(0, ...admin.orders.value.filter(row => row.scheduleId === form.scheduleId).map(row => Number(row.tag.slice(2)))) + 1; order.tag = `#A${String(sequence).padStart(2, '0')}` }
-      Object.assign(order, { name: form.name.trim(), remarks: form.remarks.trim() || undefined, scheduleId: form.scheduleId, varietyId: form.varietyId, varietyName: admin.varieties.value.find(v => v.id === form.varietyId)?.name, status: form.status, cart: { ...form.cart }, total: editTotal.value, packed: ['ready', 'collected'].includes(form.status) || form.status === 'confirmed' && !changed && order.packed, ...(order.manualPaymentStatus ? { manualPaymentStatus: form.paymentStatus } : {}) })
+      Object.assign(order, { name: form.name.trim(), remarks: form.remarks.trim() || undefined, items: admin.products.value.filter(p=>(form.cart[p.id] ?? 0)>0).map(p=>({productId:p.id,name:order.items?.find(i=>i.productId===p.id)?.name || p.name,size:order.items?.find(i=>i.productId===p.id)?.size || p.size,kind:p.kind,spaceCost:order.items?.find(i=>i.productId===p.id)?.spaceCost ?? p.spaceCost,quantity:form.cart[p.id] ?? 0,unitPrice:order.items?.find(i=>i.productId===p.id)?.unitPrice ?? p.price})), scheduleId: form.scheduleId, status: form.status, cart: { ...form.cart }, total: editTotal.value, packed: ['ready', 'collected'].includes(form.status) || form.status === 'confirmed' && !changed && order.packed, ...(order.manualPaymentStatus ? { manualPaymentStatus: form.paymentStatus } : {}) })
       persistDemo()
-    } else await $fetch(`/api/admin/orders/${editing.value.token}`, { method: 'PATCH', headers: admin.headers.value, body: { name: form.name, remarks: form.remarks.trim() || null, scheduleId: form.scheduleId, varietyId: form.varietyId, status: form.status, cart: form.cart, ...(editing.value.manualPaymentStatus ? { paymentStatus: form.paymentStatus } : {}) } })
+    } else await $fetch(`/api/admin/orders/${editing.value.token}`, { method: 'PATCH', headers: admin.headers.value, body: { name: form.name, remarks: form.remarks.trim() || null, scheduleId: form.scheduleId, status: form.status, cart: Object.fromEntries(Object.entries(form.cart).filter(([,quantity])=>quantity>0)), ...(editing.value.manualPaymentStatus ? { paymentStatus: form.paymentStatus } : {}) } })
     await saved(); editing.value = null; shop.notify('Transaction updated.')
   } catch (e: any) { formError.value = e.data?.message || e.message || 'Could not update this transaction.' }
   finally { busy.value = false }
@@ -115,7 +135,7 @@ async function updatePayment(order: Ticket, next: PaymentStatus) {
       if (changes.status && changes.status !== 'rejected') {
         const day = shop.days.value.find(day => day.id === current.scheduleId)
         const used = admin.orders.value.filter(row => row.token !== current.token && row.scheduleId === current.scheduleId && row.status !== 'rejected' && (row.status !== 'pending_payment' || !!row.expiresAt && new Date(row.expiresAt).getTime() > Date.now()))
-        if (used.reduce((sum, row) => sum + bottleSpaces(row.cart), 0) + bottleSpaces(current.cart) > (day?.capacity ?? dailyBottleCapacity)) throw new Error('This date does not have enough bottle capacity.')
+        if (used.reduce((sum, row) => sum + bottleSpaces(row.cart, admin.products.value), 0) + bottleSpaces(current.cart, admin.products.value) > (day?.capacity ?? dailyBottleCapacity)) throw new Error('This date does not have enough bottle capacity.')
       }
       Object.assign(current, changes); updated = { ...current }; persistDemo()
     } else {
@@ -130,7 +150,9 @@ async function updatePayment(order: Ticket, next: PaymentStatus) {
 </script>
 <template>
   <section class="admin-transaction-history" aria-labelledby="transaction-history-heading" :aria-busy="loading || busy">
-    <div class="section-heading"><div><h2 id="transaction-history-heading">Transactions</h2><p class="ops-caption">Open a row for details. Change payment from its badge.</p></div><button class="secondary small-action" :disabled="loading || busy" @click="load"><RefreshCw aria-hidden="true" :size="14" />Refresh transactions</button></div>
+    <div class="section-heading"><div><h2 id="transaction-history-heading">Transactions</h2><p class="ops-caption">Open a row for details. Change payment from its badge.</p></div><div class="row-actions"><CustomerRecoveryDialog/><button class="secondary small-action" :disabled="loading || busy" @click="load"><RefreshCw aria-hidden="true" :size="14" />Refresh transactions</button></div></div>
+    <p v-if="linkedLoading" class="helper" role="status">Opening linked order and payment receipt…</p>
+    <p v-if="linkedError" class="error" role="alert">{{ linkedError }}</p>
     <div class="transaction-filters">
       <div class="transaction-search"><label class="field-label" for="transaction-search">Search transactions</label><input id="transaction-search" class="input" v-model="search" type="search" placeholder="Name, phone, tag, date or status" maxlength="100" /></div>
       <div><label class="field-label" for="transaction-scope">Dates</label><NativeSelect id="transaction-scope" v-model="scope"><NativeSelectOption value="all">All dates</NativeSelectOption><NativeSelectOption value="day">{{ scheduleId }}</NativeSelectOption></NativeSelect></div>
@@ -145,8 +167,7 @@ async function updatePayment(order: Ticket, next: PaymentStatus) {
       <form class="record-form" @submit.prevent="save">
         <label class="field-label" for="transaction-name">Customer name</label><input id="transaction-name" class="input" type="text" v-model="form.name" maxlength="80" required :aria-invalid="!!formError" :aria-describedby="formError ? 'transaction-edit-error' : undefined" />
         <label class="field-label" for="transaction-date">Drop date</label><input id="transaction-date" class="input" v-model="form.scheduleId" type="date" required :aria-invalid="!!formError" :aria-describedby="formError ? 'transaction-edit-error' : undefined" />
-        <label class="field-label" for="transaction-variety">Tebu variety</label><NativeSelect id="transaction-variety" v-model="form.varietyId" required><NativeSelectOption v-for="variety in admin.varieties.value" :key="variety.id" :value="variety.id">{{ variety.name }}</NativeSelectOption></NativeSelect>
-        <div v-for="product in shop.products" :key="product.id"><label class="field-label" :for="`transaction-${product.id}`">{{ product.name }} · {{ product.size }}</label><NumberInput :id="`transaction-${product.id}`" v-model="form.cart[product.id]" :label="`Edit ${product.name} quantity`" :min="0" :max="10000" required :aria-invalid="!!formError" :aria-describedby="formError ? 'transaction-edit-error' : undefined" /></div>
+        <div v-for="product in admin.products.value" :key="product.id"><label class="field-label" :for="`transaction-${product.id}`">{{ product.name }} · {{ product.size }}</label><NumberInput :id="`transaction-${product.id}`" v-model="form.cart[product.id]" :label="`Edit ${product.name} quantity`" :min="0" :max="10000" required :aria-invalid="!!formError" :aria-describedby="formError ? 'transaction-edit-error' : undefined" /></div>
         <label class="field-label" for="transaction-remarks">Remarks (optional)</label><textarea id="transaction-remarks" v-model="form.remarks" class="input order-remarks-input" rows="3" :maxlength="orderRemarksMaxLength" :aria-invalid="!!formError" :aria-describedby="formError ? 'transaction-edit-error' : undefined" />
         <label class="field-label" for="transaction-status">Order status</label><NativeSelect id="transaction-status" v-model="form.status"><NativeSelectOption v-for="status in statuses.filter(status => !editing?.manualPaymentStatus || !['pending_payment','pending_review'].includes(status))" :key="status" :value="status">{{ statusLabel(status) }}</NativeSelectOption></NativeSelect>
         <template v-if="editing?.manualPaymentStatus"><label class="field-label" for="transaction-payment">Manual payment</label><NativeSelect id="transaction-payment" v-model="form.paymentStatus"><NativeSelectOption value="paid">Paid</NativeSelectOption><NativeSelectOption value="unpaid">Unpaid</NativeSelectOption></NativeSelect></template>
@@ -155,6 +176,6 @@ async function updatePayment(order: Ticket, next: PaymentStatus) {
       </form>
     </RecordDialog>
     <ConfirmDialog :open="!!deleting" title="Delete this transaction?" :description="`${deleting?.tag || ''} for ${deleting?.name || ''} will be permanently removed, including its receipt and customer ticket. Stock and financial totals will be recalculated.`" confirm-label="Delete transaction" :busy="busy" :error="formError" @confirm="remove" @update:open="value => { if (!value) deleting = null }" />
-    <AdminTransactionDetails :order="details" :busy="busy" :payment-error="paymentError" @close="details = null" @payment="updatePayment" @edit="editDetails" @delete="deleteDetails" />
+    <AdminTransactionDetails :order="details" :busy="busy" :payment-error="paymentError" @changed="async updated=>{details=updated;await saved()}" @close="details = null" @payment="updatePayment" @edit="editDetails" @delete="deleteDetails" />
   </section>
 </template>

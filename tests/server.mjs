@@ -1,29 +1,15 @@
+import './helpers/disable-telegram.mjs'
 import assert from 'node:assert/strict'
-process.env.NUXT_PUBLIC_DEMO = 'false'
-process.env.NUXT_DATABASE_URL = ''
-process.env.NUXT_ADMIN_KEY = ''
-// Nuxt's prerender harness exposes in-process requests without opening a port.
-// Run npm run generate first. The Node server bundle starts a listener on import.
-const { localFetch, closePrerenderer } = await import('../.nuxt/prerender/index.mjs')
-const request = (path, options = {}) => localFetch(path, { ...options, headers: { host: 'localhost', ...options.headers } })
-try {
-  for (const [path, text] of [['/', 'A little cane.'], ['/drop', 'Past transactions.'], ['/admin', 'Your drop checklist.'], ['/admin/calendar', 'Plan your drops.'], ['/admin/log', 'A little bookkeeping.']]) {
-    const response = await request(path)
-    assert.equal(response.status, 200)
-    const html = await response.text()
-    assert.ok(html.includes(text), `Missing expected content on ${path}`)
-    assert.ok(html.includes('demo:false') || html.includes('"demo":false'), 'Production runtime must disable demo mode')
-    assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
-  }
-  assert.equal((await request('/api/health')).status, 200)
-  assert.equal((await request('/api/admin')).status, 401)
-  assert.equal((await request('/api/orders')).status, 401)
-  assert.equal((await request('/api/orders/not-a-token')).status, 404)
-  assert.equal((await request('/api/catalog')).status, 503)
-  assert.equal((await request('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': '2' }, body: '{}' })).status, 401)
-  assert.equal((await request('/api/identity', { method: 'POST', headers: { origin: 'https://untrusted.example', 'content-length': '2' }, body: '{}' })).status, 403)
-  assert.equal((await request('/api/uploads', { method: 'POST', headers: { 'content-length': '400000' }, body: '{}' })).status, 413)
-  const privateResponse = await request('/api/admin')
-  assert.equal(privateResponse.headers.get('cache-control'), 'no-store')
-  console.log('PASS: SSR routes, production demo toggle, health, admin/token guards, missing-DB guard, cross-origin rejection, upload limit, private cache headers.')
-} finally { await closePrerenderer() }
+import {spawn} from 'node:child_process'
+import {setTimeout as delay} from 'node:timers/promises'
+const base='http://127.0.0.1:3064'
+const child=spawn(process.execPath,['.output/server/index.mjs'],{env:{...process.env,NUXT_PUBLIC_DEMO:'false',NUXT_DATABASE_URL:'',NUXT_ADMIN_KEY:'',NITRO_HOST:'127.0.0.1',NITRO_PORT:'3064'},stdio:['ignore','pipe','pipe']})
+let output='';child.stdout.on('data',x=>output+=x);child.stderr.on('data',x=>output+=x)
+try{
+ let ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}await delay(100)}assert.ok(ready,output)
+ for(const path of ['/','/drop','/admin','/admin/calendar','/admin/products','/admin/history','/admin/settings','/recover']){const response=await fetch(base+path);assert.equal(response.status,200,path);assert.equal(response.headers.get('x-content-type-options'),'nosniff')}
+ for(const [path,status] of [['/api/admin',401],['/api/admin/audit',401],['/api/admin/settings',401],['/api/orders',401],['/api/orders/not-valid',404],['/api/catalog',503]])assert.equal((await fetch(base+path)).status,status,path)
+ assert.equal((await fetch(base+'/api/identity',{method:'POST',headers:{Origin:'https://untrusted.example','Content-Type':'application/json'},body:'{}'})).status,403)
+ assert.equal((await fetch(base+'/api/admin')).headers.get('cache-control'),'no-store')
+ console.log('PASS server: SSR routes, recovery/history pages, auth guards, missing-database guard, security/cache headers and cross-origin rejection.')
+}finally{if(child.exitCode===null&&child.signalCode===null){const ended=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await ended}}

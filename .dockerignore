@@ -2,6 +2,11 @@ node_modules
 generated
 .nuxt
 .nuxt-check
+.nuxt-build
+.nuxt-design
+.agents
+.claude
+.windsurf
 .output
 .git
 .env

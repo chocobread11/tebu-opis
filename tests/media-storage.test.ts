@@ -4,8 +4,16 @@ import { createServer } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createMediaStorage, type MediaStorageConfig } from '../server/storage/media'
+import { createMediaStorage, r2ApiEndpoint, type MediaStorageConfig } from '../server/storage/media'
 const config = (uploadDir: string): MediaStorageConfig => ({ uploadDir, uploadStorage: 'local', r2: { accountId: '', endpoint: '', accessKeyId: '', secretAccessKey: '', bucket: '', prefix: 'tebu/media' } })
+
+test('R2 dashboard bucket URLs use the API origin and custom gateway paths stay intact', () => {
+  assert.equal(r2ApiEndpoint(' https://account.r2.cloudflarestorage.com/tebu-media/ '), 'https://account.r2.cloudflarestorage.com')
+  assert.equal(r2ApiEndpoint('https://account.eu.r2.cloudflarestorage.com/bucket'), 'https://account.eu.r2.cloudflarestorage.com')
+  assert.equal(r2ApiEndpoint(' http://127.0.0.1:3057/s3 '), 'http://127.0.0.1:3057/s3')
+  assert.equal(r2ApiEndpoint(' '), '')
+  assert.throws(() => r2ApiEndpoint('not a URL'), /valid R2 API endpoint/)
+})
 
 test('local media stays readable after choosing R2 and unsafe filenames are rejected', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tebu-media-'))
@@ -43,11 +51,12 @@ test('R2 uses signed S3 PUT/GET/DELETE operations and preserves object keys', as
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const port = (server.address() as { port: number }).port
   const options = config(tmpdir())
-  const storage = createMediaStorage({ ...options, uploadStorage: 'r2', r2: { ...options.r2, endpoint: `http://127.0.0.1:${port}`, bucket: 'test-bucket', accessKeyId: 'fixture-access', secretAccessKey: 'fixture-secret' } })
+  const storage = createMediaStorage({ ...options, uploadStorage: ' r2 ', r2: { ...options.r2, endpoint: ` http://127.0.0.1:${port} `, bucket: 'test-bucket ', prefix: ' tebu/media ', accessKeyId: ' fixture-access ', secretAccessKey: ' fixture-secret ' } })
   try {
     const bytes = Buffer.from('object payload')
     const filename = await storage.write('fixture.webp', bytes, 'receipt')
     assert.equal(filename, 'r2:tebu/media/receipts/fixture.webp')
+    assert.ok(objects.has('/test-bucket/tebu/media/receipts/fixture.webp'), 'Whitespace must not change the signed bucket path')
     assert.deepEqual(await storage.read(filename), bytes)
     const dropBytes = Buffer.from('separate drop image')
     const drop = await storage.write('fixture.webp', dropBytes, 'freezer')

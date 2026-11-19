@@ -9,6 +9,8 @@ export function receiptUploadSignature(order: Pick<Order, 'token' | 'expiresAt'>
 export async function authorizeReceipt(event: H3Event, order: Order) {
   const signature = getHeader(event, 'authorization')?.match(/^Receipt ([\w-]{43})$/)?.[1]
   if (!signature) {
+    const checkout = !bearer(event) ? await findCheckoutSession(event) : null
+    if (checkout && checkout.tokenHash === order.checkoutSessionHash && checkout.customerId === order.customerId) return
     const customer = await requireCustomer(event)
     if (customer.id !== order.customerId) throw createError({ statusCode: 403, message: 'This receipt belongs to another customer.' })
     return

@@ -26,7 +26,7 @@ async function save(remove = false) {
   busy.value = true; error.value = ''
   try {
     if (admin.local) {
-      const used = admin.orders.value.filter(order => order.scheduleId === selected.value && order.status !== 'rejected' && (order.status !== 'pending_payment' || !!order.expiresAt && new Date(order.expiresAt).getTime() > Date.now())).reduce((sum, order) => sum + bottleSpaces(order.cart), 0)
+      const used = admin.orders.value.filter(order => order.scheduleId === selected.value && order.status !== 'rejected' && (order.status !== 'pending_payment' || !!order.expiresAt && new Date(order.expiresAt).getTime() > Date.now())).reduce((sum, order) => sum + bottleSpaces(order.cart, admin.products.value), 0)
       if (!Number.isInteger(form.capacity) || Number(form.capacity) < Math.max(1, used)) throw new Error('Box capacity must cover existing reservations.')
       const row: CalendarDay = { id: selected.value, capacity: Number(form.capacity), kecikCapacity: Number(form.capacity), besarCapacity: Math.floor(Number(form.capacity) / 2), remaining: Number(form.capacity), open: !remove && form.status === 'open', closedReason: remove ? 'Removed' : form.status === 'open' ? null : form.status, removedAt: remove ? new Date().toISOString() : null }
       const existing = shop.days.value.findIndex(day => day.id === row.id)
@@ -52,7 +52,7 @@ async function save(remove = false) {
       <p v-if="!editable" class="helper">Past dates and delivered drops are kept here for your records.</p>
       <form v-else @submit.prevent="save()">
         <div class="calendar-editor-fields"><div><label class="field-label" for="day-status">Day status</label><NativeSelect id="day-status" :aria-invalid="!!error" :aria-describedby="error ? 'schedule-error' : undefined" v-model="form.status"><NativeSelectOption value="open">Open for orders</NativeSelectOption><NativeSelectOption value="MC">Closed · MC</NativeSelectOption><NativeSelectOption value="AL">Closed · AL</NativeSelectOption><NativeSelectOption value="Other">Closed · Other</NativeSelectOption></NativeSelect></div><div><label class="field-label" for="day-capacity">Box capacity (spaces)</label><NumberInput id="day-capacity" :aria-invalid="!!error" :aria-describedby="error ? 'schedule-error' : 'box-capacity-help'" v-model="form.capacity" label="box capacity in spaces" :min="1" :max="10000" required /></div></div>
-        <p id="box-capacity-help" class="helper">Kecik uses 1 space; Besar uses 2. {{ form.capacity || 0 }} spaces fit up to {{ form.capacity || 0 }} Kecik or {{ Math.floor(Number(form.capacity || 0) / 2) }} Besar, or any mix.</p>
+        <p id="box-capacity-help" class="helper">Each product has its own space cost in Products. {{ form.capacity || 0 }} spaces are shared by all orders for this date.</p>
         <p v-if="committed" class="helper">{{ committed }} active order{{ committed === 1 ? '' : 's' }} need your follow-up if you close this date.</p>
         <p v-if="error" id="schedule-error" class="error" role="alert">{{ error }}</p>
         <div class="record-form-actions"><button class="secondary danger" type="button" :disabled="busy" @click="confirmRemove = true">Remove day</button><button class="primary" :disabled="busy">Save day</button></div>

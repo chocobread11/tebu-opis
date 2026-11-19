@@ -37,7 +37,7 @@ try {
     page.setDefaultTimeout(15000)
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(baseUrl)
-    await page.getByRole('button', { name: 'Add Botol Kecik', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Add Tebu 1 · Kecik', exact: true }).waitFor()
     const layoutTransitions = await page.evaluate(() => {
       const findings = []
       for (const sheet of document.styleSheets) for (const rule of sheet.cssRules) {
@@ -54,7 +54,7 @@ try {
     await page.locator('.order-bar').waitFor()
     await page.getByRole('button', { name: 'Remove Asam Boi', exact: true }).click()
     await page.locator('.order-bar').waitFor({ state: 'detached' })
-    await page.getByRole('button', { name: 'Add Botol Kecik', exact: true }).click()
+    await page.getByRole('button', { name: 'Add Tebu 1 · Kecik', exact: true }).click()
     await checkCentered(page, '.drawer-content', () => page.getByRole('button', { name: 'LOCK MY BOTTLE' }).click())
     await checkCentered(page, '.drawer-content', () => page.getByRole('button', { name: 'Close checkout' }).click())
     await page.locator('.drawer-content').waitFor({ state: 'detached' })
@@ -73,7 +73,7 @@ try {
       await page.getByRole('button', { name: 'Close checkout' }).click()
     }
     await page.locator('.drawer-content').waitFor({ state: 'detached' })
-    await page.getByRole('button', { name: 'Remove one Botol Kecik', exact: true }).click()
+    await page.getByRole('button', { name: 'Remove one Tebu 1 · Kecik', exact: true }).click()
     await page.locator('.order-bar').waitFor({ state: 'detached' })
 
     await page.getByRole('link', { name: 'Admin', exact: true }).click()
@@ -106,7 +106,7 @@ try {
   const page = await context.newPage()
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(baseUrl)
-  await page.getByRole('button', { name: 'Add Botol Kecik', exact: true }).click()
+  await page.getByRole('button', { name: 'Add Tebu 1 · Kecik', exact: true }).click()
   await page.getByRole('button', { name: 'LOCK MY BOTTLE' }).click()
   const motion = await page.locator('.drawer-content').evaluate(element => ({ animation: getComputedStyle(element).animationName, transition: getComputedStyle(element).transitionDuration }))
   assert.equal(motion.animation, 'none')

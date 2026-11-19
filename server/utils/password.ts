@@ -18,7 +18,7 @@ const attempts = new Map<string, { count: number; expires: number }>()
 export function limitPasswordAttempts(event: H3Event, phone: string) {
   const now = Date.now()
   for (const [key, row] of attempts) if (row.expires <= now) attempts.delete(key)
-  const key = `${getRequestIP(event)}:${phone}`
+  const key = `${event.context.clientIp || getRequestIP(event)}:${phone}`
   const row = attempts.get(key)
   if (row && row.count >= 10) {
     setHeader(event, 'Retry-After', Math.ceil((row.expires - now) / 1000))

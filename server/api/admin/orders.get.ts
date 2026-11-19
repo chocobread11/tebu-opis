@@ -31,6 +31,6 @@ export default defineEventHandler(async event => {
     const total = await tx.order.count({ where })
     const page = Math.min(parsed.data.page, Math.max(1, Math.ceil(total / pageSize)))
     const rows = await tx.order.findMany({ where, orderBy: [{ scheduleId: 'desc' }, { sequence: 'desc' }], skip: (page - 1) * pageSize, take: pageSize })
-    return { orders: await Promise.all(rows.map(order => toTicket(order, true))), total, page, pageSize }
+    return { orders: await Promise.all(rows.map(order => toTicket(order, true, tx))), total, page, pageSize }
   })
 })

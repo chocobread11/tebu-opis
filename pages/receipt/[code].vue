@@ -1,0 +1,3 @@
+<template>
+  <ReceiptUploadPage />
+</template>

@@ -1,7 +1,7 @@
 // Preserve existing icon APIs while rendering the preset's Hugeicons library.
 import { defineComponent, h } from 'vue'
 import { HugeiconsIcon, type IconArray } from '@hugeicons/vue'
-import { ArrowDownLeft as ArrowDownLeftData, ArrowLeft as ArrowLeftData, ArrowRight as ArrowRightData, ArrowUpRight as ArrowUpRightData, BookOpen as BookOpenData, CalendarDays as CalendarDaysData, Camera as CameraData, Check as CheckData, CheckCircle as CheckCircle2Data, ChevronDown as ChevronDownData, ChevronLeft as ChevronLeftData, ChevronRight as ChevronRightData, ClipboardCheck as ClipboardCheckData, Copy as CopyData, ExternalLink as ExternalLinkData, History as HistoryData, Leaf as LeafData, LoaderCircle as LoaderCircleData, MapPin as MapPinData, MessageCircle as MessageCircleData, Minus as MinusData, PackageCheck as PackageCheckData, Pencil as PencilData, Plus as PlusData, QrCode as QrCodeData, ReceiptText as ReceiptTextData, RefreshCw as RefreshCwData, ShieldCheck as ShieldCheckData, ShoppingBag as ShoppingBagData, Snowflake as SnowflakeData, Sprout as SproutData, Ticket as TicketData, Trash2 as Trash2Data, CloudUpload as UploadCloudData, Users as UsersData, Wallet as WalletData, X as XData, Zap as ZapData } from '@hugeicons/core-free-icons'
+import { ArrowDownLeft as ArrowDownLeftData, ArrowLeft as ArrowLeftData, ArrowRight as ArrowRightData, ArrowUpRight as ArrowUpRightData, BookOpen as BookOpenData, CalendarDays as CalendarDaysData, Camera as CameraData, Check as CheckData, CheckCircle as CheckCircle2Data, ChevronDown as ChevronDownData, ChevronLeft as ChevronLeftData, ChevronRight as ChevronRightData, ClipboardCheck as ClipboardCheckData, Copy as CopyData, ExternalLink as ExternalLinkData, History as HistoryData, Leaf as LeafData, LoaderCircle as LoaderCircleData, MapPin as MapPinData, MessageCircle as MessageCircleData, Minus as MinusData, PackageCheck as PackageCheckData, Pencil as PencilData, Plus as PlusData, QrCode as QrCodeData, ReceiptText as ReceiptTextData, RefreshCw as RefreshCwData, Settings as SettingsData, ShieldCheck as ShieldCheckData, ShoppingBag as ShoppingBagData, Snowflake as SnowflakeData, Sprout as SproutData, Ticket as TicketData, Trash2 as Trash2Data, CloudUpload as UploadCloudData, Users as UsersData, Wallet as WalletData, X as XData, Zap as ZapData } from '@hugeicons/core-free-icons'
 
 function icon(data: typeof LeafData, name: string) {
   const glyph: IconArray = data.map(([tag, attributes]) => [tag, { ...attributes }])
@@ -51,3 +51,5 @@ export const Users = icon(UsersData, 'Users')
 export const Wallet = icon(WalletData, 'Wallet')
 export const X = icon(XData, 'X')
 export const Zap = icon(ZapData, 'Zap')
+
+export const Settings = icon(SettingsData, 'Settings')

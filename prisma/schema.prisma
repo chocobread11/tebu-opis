@@ -16,6 +16,8 @@ model Customer {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   orders    Order[]
   sessions  CustomerSession[]
+  checkouts CheckoutSession[]
+  recoveries PasswordRecovery[]
 
   @@map("customers")
 }
@@ -28,6 +30,17 @@ model CustomerSession {
 
   @@index([customerId])
   @@map("customer_sessions")
+}
+
+model CheckoutSession {
+  tokenHash String @id @map("token_hash")
+  customerId String @map("customer_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([customerId])
+  @@map("checkout_sessions")
 }
 
 model Schedule {
@@ -57,7 +70,7 @@ model Order {
   customerId  String       @map("customer_id") @db.Uuid
   scheduleId  String       @map("schedule_id")
   sequence    Int
-  tag         String
+  tag         String       @default(dbgenerated("next_order_tag()"))
   cart        Json         @db.JsonB
   bottles     Int
   total       Int
@@ -66,6 +79,8 @@ model Order {
   manualPaymentStatus String? @map("manual_payment_status")
   customerName String? @map("customer_name")
   remarks     String?      @db.Text
+  checkoutSessionHash String? @map("checkout_session_hash")
+  checkoutSession CheckoutSession? @relation(fields: [checkoutSessionHash], references: [tokenHash], onDelete: SetNull)
   receiptId   String?      @map("receipt_id") @db.Uuid
   packed      Boolean      @default(false)
   notified    Boolean      @default(false)
@@ -76,6 +91,10 @@ model Order {
   media       Media[]
   receipt     Media?       @relation("SubmittedReceipt", fields: [receiptId], references: [id], onDelete: SetNull)
   items       OrderItem[]
+  fulfilled Boolean @default(false)
+  refundedTotal Int @default(0) @map("refunded_total")
+  cancellationReason String? @map("cancellation_reason")
+  refunds Refund[]
   varietyId   String?      @map("variety_id")
   varietyName String?      @map("variety_name")
   variety     CaneVariety? @relation(fields: [varietyId], references: [id], onDelete: Restrict)
@@ -96,6 +115,10 @@ model Media {
   publishedSchedules Schedule[] @relation("PublishedPhoto")
   submittedOrders    Order[]    @relation("SubmittedReceipt")
 
+  productId String? @map("product_id")
+  product Product? @relation("ProductUploads", fields: [productId], references: [id], onDelete: SetNull)
+  publishedProducts Product[] @relation("ProductImage")
+
   @@map("media")
 }
 
@@ -110,6 +133,14 @@ model Product {
   sortOrder   Int         @default(0) @map("sort_order")
   items       OrderItem[]
 
+  spaceCost Int @default(1) @map("space_cost")
+  trackStock Boolean @default(true) @map("track_stock")
+  varietyTracked Boolean @default(false) @map("variety_tracked")
+  imageId String? @map("image_id") @db.Uuid
+  image Media? @relation("ProductImage", fields: [imageId], references: [id], onDelete: SetNull)
+  uploads Media[] @relation("ProductUploads")
+  stockEntries StockEntry[]
+
   @@map("products")
 }
 
@@ -118,6 +149,10 @@ model OrderItem {
   productId String  @map("product_id")
   quantity  Int
   unitPrice Int     @map("unit_price")
+  name String?
+  size String?
+  kind String?
+  spaceCost Int @default(0) @map("space_cost")
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
 
@@ -140,6 +175,7 @@ model Expense {
 }
 
 model Harvest {
+  stockEntries StockEntry[]
   id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   date       DateTime     @db.Date
   type       String
@@ -165,6 +201,100 @@ model CaneVariety {
   sortOrder   Int       @default(0) @map("sort_order")
   harvests    Harvest[]
   orders      Order[]
+  stockEntries StockEntry[]
 
   @@map("cane_varieties")
+}
+
+model StockEntry {
+  kind String @default("restock")
+  sourceHarvestId String? @map("source_harvest_id") @db.Uuid
+  sourceHarvest Harvest? @relation(fields: [sourceHarvestId], references: [id], onDelete: Restrict)
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String @map("product_id")
+  varietyId String? @map("variety_id")
+  date DateTime @db.Date
+  quantity Int
+  note String @default("")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variety CaneVariety? @relation(fields: [varietyId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceHarvestId, productId])
+  @@index([productId, varietyId])
+  @@map("stock_entries")
+}
+
+model ShopSettings {
+  merchantName String? @map("merchant_name")
+  supportWhatsapp String? @map("support_whatsapp")
+  siteUrl String? @map("site_url")
+  telegramEnabled Boolean? @map("telegram_enabled")
+  telegramChatId String? @map("telegram_chat_id")
+  id String @id @default("main")
+  whatsappOpening String @map("whatsapp_opening") @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("shop_settings")
+}
+
+model AuditEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType String @map("entity_type")
+  entityId String @map("entity_id")
+  action String
+  actor String @default("admin")
+  before Json? @db.JsonB
+  after Json? @db.JsonB
+  note String @default("")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([entityType, entityId, createdAt])
+  @@map("audit_events")
+}
+model Refund {
+  requestId String @unique @default(dbgenerated("gen_random_uuid()")) @map("request_id") @db.Uuid
+  cancelOrder Boolean @default(false) @map("cancel_order")
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  amount Int
+  reason String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@index([orderId])
+  @@map("refunds")
+}
+model PasswordRecovery {
+  tokenHash String @id @map("token_hash")
+  customerId String @map("customer_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  usedAt DateTime? @map("used_at") @db.Timestamptz(6)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  @@index([customerId])
+  @@map("password_recoveries")
+}
+
+// Keep the creation snapshot even if an unpaid order is later removed.
+model TelegramNotification {
+  orderId String @map("order_id") @db.Uuid
+  event String @default("created")
+  message String @db.Text
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(6)
+  sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
+  messageId Int? @map("message_id")
+  lastError String? @map("last_error")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@id([orderId, event])
+  @@index([sentAt, nextAttemptAt])
+  @@map("telegram_notifications")
+}
+
+model AdminSession {
+  tokenHash String @id @map("token_hash")
+  keyHash String @map("key_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([expiresAt])
+  @@map("admin_sessions")
 }

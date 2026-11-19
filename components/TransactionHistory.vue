@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { money, bottleCount, ticketStatusLabel } from '~/shared/domain'
+import { money, bottleCount, ticketStatusLabel, type Ticket } from '~/shared/domain'
+import { ChevronRight } from '~/lib/icons'
 const shop = useShop()
 const access = useCustomerAccess()
+const recoveryHelp=computed(()=>{const contact=String(shop.publicSettings.value.supportWhatsapp||'').replace(/\D/g,'');return /^60\d{8,11}$/.test(contact)?`https://wa.me/${contact}?text=${encodeURIComponent(`Hi, I forgot my Tebu Drop history password for ${phone.value}. Please help me recover access.`)}`:''})
 const phone = ref('')
 const password = ref('')
 const passwordRequired = ref(false)
@@ -16,6 +18,7 @@ const passwordInput = ref<HTMLInputElement | null>(null)
 let poll: ReturnType<typeof setInterval> | undefined
 let refreshing = false
 const history = computed(() => unlocked.value ? [...shop.tickets.value].filter(order => !shop.demo || order.phone === shop.customerPhone.value).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [])
+const mainCount = (order: Ticket) => order.items?.filter(item => (item.kind || (['asam','limau'].includes(item.productId) ? 'addon' : 'bottle')) === 'bottle').reduce((sum,item) => sum+item.quantity,0) ?? bottleCount(order.cart)
 const dateLabel = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
 function resetSearch() { unlocked.value = false; passwordRequired.value = false; searched.value = false; password.value = ''; error.value = ''; privacyMessage.value = ''; access.unlockedPhone.value = '' }
 async function lookup() {
@@ -86,12 +89,14 @@ onBeforeUnmount(() => {
     <p id="history-help" class="helper">Your phone number is remembered. After unlocking, your history stays signed in for 30 minutes on this device. Your password is never saved.</p>
     <p v-if="error" id="history-error" class="error" role="alert">{{ error }}</p>
     <p v-if="passwordRequired && !unlocked" class="helper">This phone number has password protection. Enter its history password to continue.</p>
+    <p v-if="passwordRequired&&!unlocked" class="helper">Forgot your password? <a v-if="recoveryHelp" :href="recoveryHelp" class="text-button" target="_blank" rel="noopener noreferrer">Ask the operator for a recovery link</a><span v-else>Contact the operator for a recovery link.</span> Your order history will stay intact.</p>
     <template v-if="unlocked">
       <div class="section-heading"><div><h2>{{ shop.customerName.value }}’s transactions</h2><span class="subtle">{{ history.length }} transaction{{ history.length === 1 ? '' : 's' }}</span></div><button type="button" class="secondary small-action" :disabled="busy" @click="lockHistory">Lock history</button></div>
-      <div class="log-table-card transaction-table">
-        <table class="log-table"><caption class="sr-only">Past transactions for {{ shop.customerPhone.value }}</caption><thead><tr><th scope="col">Order / drop date</th><th scope="col">Items</th><th scope="col">Total</th><th scope="col">Status</th><th scope="col">Receipt</th></tr></thead>
-          <tbody><tr v-for="order in history" :key="order.token"><td><strong>{{ order.tag }}</strong><span class="table-note">{{ dateLabel(order.scheduleId) }}</span></td><td>{{ bottleCount(order.cart) }} bottle{{ bottleCount(order.cart) === 1 ? '' : 's' }}<span class="table-note">{{ order.varietyName }}</span><OrderRemarks :value="order.remarks" compact preview /></td><td class="history-total">{{ money(order.total) }}</td><td><span :class="['transaction-status', order.status]">{{ ticketStatusLabel(order) }}</span></td><td><NuxtLink :to="`/drop?t=${order.token}`" class="text-button" :aria-label="`View receipt ${order.tag}`">View<span class="history-receipt-label"> receipt</span></NuxtLink></td></tr>
-          <tr v-if="!history.length"><td colspan="5" class="table-empty"><strong>No transactions yet.</strong><span>Completed checkout orders will appear here.</span></td></tr></tbody>
+      <p v-if="history.length" class="helper history-table-help">Select an order to view its pickup ticket.</p>
+      <div class="log-table-card customer-history-table">
+        <table class="log-table"><caption class="sr-only">Past transactions for {{ shop.customerPhone.value }}. Select an order to view its pickup ticket.</caption><thead><tr><th scope="col">Order / drop date</th><th scope="col">Items</th><th scope="col">Total</th><th scope="col">Status</th></tr></thead>
+          <tbody><tr v-for="order in history" :key="order.token" class="history-row"><td><NuxtLink :to="`/drop?t=${order.token}`" class="history-order-link" :aria-label="`View pickup ticket ${order.tag} for ${dateLabel(order.scheduleId)}`"><strong>{{ order.tag }}</strong><ChevronRight aria-hidden="true" :size="14" /></NuxtLink><span class="table-note">{{ dateLabel(order.scheduleId) }}</span></td><td>{{ mainCount(order) }} item{{ mainCount(order) === 1 ? '' : 's' }}<span class="table-note">{{ order.varietyName }}</span><OrderRemarks :value="order.remarks" compact preview /></td><td class="history-total">{{ money(order.total) }}</td><td><span :class="['transaction-status', order.status]">{{ ticketStatusLabel(order) }}</span></td></tr>
+          <tr v-if="!history.length"><td colspan="4" class="table-empty"><strong>No transactions yet.</strong><span>Completed checkout orders will appear here.</span></td></tr></tbody>
         </table>
       </div>
       <details class="history-privacy"><summary>Privacy settings · {{ access.protectedHistory.value ? 'Password protected' : 'No password' }}</summary>

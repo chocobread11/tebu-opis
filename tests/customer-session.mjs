@@ -1,3 +1,4 @@
+import './helpers/disable-telegram.mjs'
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { randomBytes, createHash } from 'node:crypto'

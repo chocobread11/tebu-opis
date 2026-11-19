@@ -1,23 +1,30 @@
+import { reservationExpired } from './order'
+import { defaultWhatsAppOpening, renderWhatsAppOpening } from './whatsapp'
 export const dailyBottleCapacity = 12
 // Maximum of either size when it alone fills the shared box.
 export const dailyBottleStandard = { kecik: dailyBottleCapacity, besar: Math.floor(dailyBottleCapacity / 2) } as const
 export const bottleSpaceCost = { kecik: 1, besar: 2 } as const
-export type ProductId = 'kecik' | 'besar' | 'asam' | 'limau'
+export type ProductId = string
 export type Cart = Record<ProductId, number>
-export type Product = { id: ProductId; name: string; size: string; price: number; description: string; kind: string }
+export type Product = { id: ProductId; name: string; size: string; price: number; description: string; kind: string; active?: boolean; sortOrder?: number; spaceCost?: number; trackStock?: boolean; varietyTracked?: boolean; imageUrl?: string; stocks?: ProductStock[] }
+export type ProductStock = { varietyId?: string; stocked: number; reserved: number; remaining: number }
 export const products: Product[] = [
-  { id: 'kecik' as const, name: 'Botol Kecik', size: '500ml', price: 600, description: 'Kecik minum terus.', kind: 'bottle' },
-  { id: 'besar' as const, name: 'Botol Besar', size: '1l', price: 1100, description: 'Bawak balik rumah.', kind: 'bottle' },
-  { id: 'asam' as const, name: 'Asam Boi', size: 'pouch', price: 100, description: 'Sweet meets salty.', kind: 'addon' },
-  { id: 'limau' as const, name: 'Limau Kasturi', size: 'pouch', price: 100, description: 'A fresh citrus kick.', kind: 'addon' },
+  { id: 'kecik' as const, name: 'Tebu 1 · Kecik', size: '500ml', price: 600, description: 'Kecik minum terus.', kind: 'bottle', spaceCost: 1, trackStock: true, varietyTracked: false },
+  { id: 'besar' as const, name: 'Tebu 1 · Besar', size: '1l', price: 1100, description: 'Bawak balik rumah.', kind: 'bottle', spaceCost: 2, trackStock: true, varietyTracked: false },
+  { id: 'tebu-2-kecik', name: 'Tebu 2 · Kecik', size: '500ml', price: 600, description: 'Kecik minum terus.', kind: 'bottle', spaceCost: 1, trackStock: true, varietyTracked: false },
+  { id: 'tebu-2-besar', name: 'Tebu 2 · Besar', size: '1l', price: 1100, description: 'Bawak balik rumah.', kind: 'bottle', spaceCost: 2, trackStock: true, varietyTracked: false },
+  { id: 'asam' as const, name: 'Asam Boi', size: 'pouch', price: 100, description: 'Sweet meets salty.', kind: 'addon', spaceCost: 0, trackStock: false, varietyTracked: false },
+  { id: 'limau' as const, name: 'Limau Kasturi', size: 'pouch', price: 100, description: 'A fresh citrus kick.', kind: 'addon', spaceCost: 0, trackStock: false, varietyTracked: false },
 ]
-export function emptyCart(): Cart { return { kecik: 0, besar: 0, asam: 0, limau: 0 } }
-export function total(cart: Cart, catalog: Product[] = products) { return catalog.reduce((sum, p) => sum + p.price * cart[p.id], 0) }
-export function bottleCount(cart: Cart) { return cart.kecik + cart.besar }
-export function bottleSpaces(cart: Pick<Cart, 'kecik' | 'besar'>) { return cart.kecik * bottleSpaceCost.kecik + cart.besar * bottleSpaceCost.besar }
-export function boxAvailability(capacity: number, used: Pick<Cart, 'kecik' | 'besar'>) {
-  const remaining = Math.max(0, capacity - bottleSpaces(used))
-  return { capacity, remaining, kecikUsed: used.kecik, besarUsed: used.besar, kecikCapacity: capacity, besarCapacity: Math.floor(capacity / 2), kecikRemaining: remaining, besarRemaining: Math.floor(remaining / 2) }
+export function emptyCart(catalog: Pick<Product, 'id'>[] = products): Cart { return Object.fromEntries(catalog.map(product => [product.id, 0])) }
+export function sameCart(a: Cart, b: Cart) { return [...new Set([...Object.keys(a), ...Object.keys(b)])].every(id => (a[id] || 0) === (b[id] || 0)) }
+export function total(cart: Cart, catalog: Product[] = products) { return catalog.reduce((sum, p) => sum + p.price * (cart[p.id] || 0), 0) }
+export function bottleCount(cart: Cart, catalog: Pick<Product, 'id' | 'kind'>[] = products) { return catalog.reduce((sum, p) => sum + (p.kind === 'bottle' ? cart[p.id] || 0 : 0), 0) }
+export function productSpaces(product: Pick<Product, 'id' | 'kind' | 'spaceCost'>) { return product.spaceCost ?? (product.kind === 'addon' ? 0 : product.id === 'besar' ? 2 : 1) }
+export function bottleSpaces(cart: Partial<Cart>, catalog: Pick<Product, 'id' | 'kind' | 'spaceCost'>[] = products) { return catalog.reduce((sum, p) => sum + (cart[p.id] || 0) * productSpaces(p), 0) }
+export function boxAvailability(capacity: number, used: { kecik: number; besar: number; spaces?: number; items?: CalendarDay['itemUsage'] }) {
+  const remaining = Math.max(0, capacity - (used.spaces ?? bottleSpaces({ kecik: used.kecik, besar: used.besar })))
+  return { capacity, remaining, usedSpaces: used.spaces ?? bottleSpaces({ kecik: used.kecik, besar: used.besar }), itemUsage: used.items, kecikUsed: used.kecik, besarUsed: used.besar, kecikCapacity: capacity, besarCapacity: Math.floor(capacity / 2), kecikRemaining: remaining, besarRemaining: Math.floor(remaining / 2) }
 }
 export function availableBottles(id: 'kecik' | 'besar', remaining: number, cart: Pick<Cart, 'kecik' | 'besar'>, stock: number) {
   const other = id === 'kecik' ? 'besar' : 'kecik'
@@ -42,15 +49,17 @@ export function nextDrops(now = new Date()) {
   return result
 }
 export type Drop = ReturnType<typeof nextDrops>[number]
-export type TicketItem = { productId: string; name: string; size: string; quantity: number; unitPrice: number }
-export type Ticket = { remarks?: string; manualPaymentStatus?: 'paid' | 'unpaid'; varietyId?: string; varietyName?: string; items?: TicketItem[]; token: string; tag: string; name: string; phone: string; scheduleId: string; cart: Cart; total: number; status: 'pending_payment' | 'pending_review' | 'confirmed' | 'ready' | 'collected' | 'rejected'; packed: boolean; notified: boolean; createdAt: string; receiptId?: string; photoUrl?: string; expiresAt?: string }
+export type TicketItem = { productId: string; name: string; size: string; quantity: number; unitPrice: number; kind?: string; spaceCost?: number }
+export type Ticket = { fulfilled?: boolean; refundedTotal?: number; cancellationReason?: string; remarks?: string; manualPaymentStatus?: 'paid' | 'unpaid'; varietyId?: string; varietyName?: string; items?: TicketItem[]; token: string; tag: string; name: string; phone: string; scheduleId: string; cart: Cart; total: number; status: 'pending_payment' | 'pending_review' | 'confirmed' | 'ready' | 'collected' | 'rejected'; packed: boolean; notified: boolean; createdAt: string; receiptId?: string; photoUrl?: string; expiresAt?: string }
 export type Expense = { id: string; date: string; amount: number; note: string }
 export type Harvest = { id: string; date: string; quantity: number; type: string; varietyId?: string; kecikQty: number; besarQty: number }
 export type LogData = { expenses: Expense[]; harvests: Harvest[]; revenue: number; paidOrderCount: number; varieties: CaneStock[] }
-export function cartSummary(cart: Cart, catalog: Product[] = products) { return catalog.filter(p => cart[p.id]).map(p => `${cart[p.id]} × ${p.name} (${p.size})`).join(', ') }
+export function cartSummary(cart: Cart, catalog: Pick<Product, 'id' | 'name' | 'size'>[] = products) { return catalog.filter(p => cart[p.id]).map(p => `${cart[p.id]} × ${p.name} (${p.size})`).join(', ') }
+
+export function ticketSummary(ticket: Pick<Ticket, 'items' | 'cart'>) { return ticket.items?.map(item => `${item.quantity} × ${item.name} (${item.size})`).join(', ') || cartSummary(ticket.cart) }
 
 export type CaneStock = { id: string; name: string; description: string; kecikQty: number; besarQty: number; kecikRemaining: number; besarRemaining: number }
-export type CalendarDay = { id: string; open: boolean; capacity: number; remaining: number; kecikCapacity?: number; besarCapacity?: number; kecikRemaining?: number; besarRemaining?: number; kecikUsed?: number; besarUsed?: number; closedReason?: string | null; removedAt?: string | null; droppedAt?: string | null; orderCount?: number }
+export type CalendarDay = { photoId?: string | null; id: string; open: boolean; capacity: number; remaining: number; kecikCapacity?: number; besarCapacity?: number; kecikRemaining?: number; besarRemaining?: number; kecikUsed?: number; besarUsed?: number; closedReason?: string | null; removedAt?: string | null; droppedAt?: string | null; orderCount?: number; usedSpaces?: number; itemUsage?: { productId: string; name: string; quantity: number; spaceCost: number }[] }
 export const demoVarieties: CaneStock[] = [
   { id: 'tebu-1', name: 'Tebu 1', description: '', kecikQty: 30, besarQty: 20, kecikRemaining: 30, besarRemaining: 20 },
   { id: 'tebu-2', name: 'Tebu 2', description: '', kecikQty: 20, besarQty: 10, kecikRemaining: 20, besarRemaining: 10 },
@@ -122,15 +131,16 @@ export function publicDeliveryDays(days: CalendarDay[], week: ActiveWeek, now = 
 }
 
 /** Packing is a separate field from payment/drop status. Use it in every customer status view. */
-export function ticketStatusLabel(ticket: Pick<Ticket, 'status' | 'packed'>) {
+export function ticketStatusLabel(ticket: Pick<Ticket, 'status' | 'packed' | 'expiresAt'>) {
+  if (reservationExpired(ticket)) return 'Reservation expired'
   if (ticket.status === 'confirmed' && ticket.packed) return 'Packed — awaiting pantry drop'
   return { pending_payment: 'Awaiting receipt', pending_review: 'Receipt under review', confirmed: 'Payment confirmed', ready: 'Ready for pickup', collected: 'Collected — thank you', rejected: 'Payment needs attention' }[ticket.status]
 }
-export function ticketWhatsAppUrl(ticket: Pick<Ticket, 'phone' | 'token' | 'name' | 'tag'>, origin: string) {
+export function ticketWhatsAppUrl(ticket: Pick<Ticket, 'phone' | 'token' | 'name' | 'tag'>, origin: string, opening = defaultWhatsAppOpening) {
   const phone = ticket.phone.replace(/\D/g, '')
   if (!/^60\d{8,11}$/.test(phone)) return ''
   const url = new URL('/drop', origin)
   url.searchParams.set('t', ticket.token)
-  const message = `Hi ${ticket.name}! Here is your Tebu Drop ticket ${ticket.tag}. Check packing, pantry drop and collection status here: ${url.toString()}`
+  const message = `${renderWhatsAppOpening(opening, ticket)}\n${url.toString()}`
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
 }

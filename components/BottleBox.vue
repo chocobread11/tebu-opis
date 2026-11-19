@@ -1,35 +1,12 @@
 <script setup lang="ts">
-import { bottleSpaces, type CalendarDay } from '~/shared/domain'
-const props = defineProps<{ day?: CalendarDay; maxKecik: number; maxBesar: number }>()
-const kecikBottles = computed(() => props.day?.kecikUsed ?? 0)
-const besarBottles = computed(() => props.day?.besarUsed ?? 0)
-const usedSpaces = computed(() => bottleSpaces({ kecik: kecikBottles.value, besar: besarBottles.value }))
-const remaining = computed(() => props.day?.remaining ?? 0)
-const date = computed(() => props.day ? new Date(`${props.day.id}T00:00:00Z`).toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : '')
+import { type CalendarDay } from '~/shared/domain'
+const props=defineProps<{day?:CalendarDay;maxKecik?:number;maxBesar?:number;availability?:{id:string;name:string;max:number}[]}>()
+const items=computed(()=>props.day?.itemUsage?.length?props.day.itemUsage:[{productId:'kecik',name:'Kecik',quantity:props.day?.kecikUsed||0,spaceCost:1},{productId:'besar',name:'Besar',quantity:props.day?.besarUsed||0,spaceCost:2}])
+const usedSpaces=computed(()=>props.day?.usedSpaces??items.value.reduce((sum,item)=>sum+item.quantity*item.spaceCost,0))
+const remaining=computed(()=>props.day?.remaining||0)
+const date=computed(()=>props.day?new Date(`${props.day.id}T00:00:00Z`).toLocaleDateString('en-MY',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'}):'')
+const availability=computed(()=>props.availability||[{id:'kecik',name:'Kecik',max:props.maxKecik||0},{id:'besar',name:'Besar',max:props.maxBesar||0}])
 </script>
 <template>
-  <div v-if="day" class="daily-box">
-    <div class="bottle-box-summary">
-      <div class="bottle-box" role="img" :aria-label="`${date}: ${kecikBottles} Botol Kecik and ${besarBottles} Botol Besar reserved across all orders. ${remaining} of ${day.capacity} bottle spaces left.`">
-        <div class="bottle-box-interior" aria-hidden="true">
-          <span v-for="n in kecikBottles" :key="`kecik-${n}`" class="box-bottle box-bottle-kecik"><i /></span>
-          <span v-for="n in besarBottles" :key="`besar-${n}`" class="box-bottle box-bottle-besar"><i /></span>
-          <span v-for="n in remaining" :key="`free-${n}`" class="box-bottle box-bottle-vacant" />
-        </div>
-      </div>
-      <div class="bottle-box-counts" aria-live="polite" aria-atomic="true">
-        <span class="eyebrow">DAY’S BOX · TOP VIEW</span>
-        <span class="bottle-box-date">{{ date }}</span>
-        <strong>{{ usedSpaces }}<small> / {{ day.capacity }} spaces used</small></strong>
-        <span><i class="box-count-dot" />{{ kecikBottles }} × Kecik · 1 space each</span>
-        <span><i class="box-count-dot besar" />{{ besarBottles }} × Besar · 2 spaces each</span>
-        <small>{{ remaining }} {{ remaining === 1 ? 'space' : 'spaces' }} left</small>
-      </div>
-    </div>
-    <div class="bottle-box-availability" aria-live="polite" aria-atomic="true">
-      <strong>You can order up to</strong><span>{{ maxKecik }} Kecik or {{ maxBesar }} Besar</span>
-      <small>Mix both sizes to fit the box: Kecik uses 1 space, Besar uses 2. Counts include your cart and selected tebu’s stock. Filled spaces are reserved by all customers. Unpaid reservations expire after 20 minutes.</small>
-    </div>
-  </div>
-  <p v-else class="helper">Choose a delivery date to see its box and available quantities.</p>
+ <div v-if="day" class="daily-box"><div class="bottle-box-summary"><div class="bottle-box" role="img" :aria-label="`${date}: ${items.map(item=>`${item.quantity} ${item.name}`).join(', ')} reserved across all orders. ${remaining} of ${day.capacity} spaces left.`"><div class="bottle-box-interior" aria-hidden="true"><template v-for="item in items" :key="item.productId+'-'+item.spaceCost"><span v-for="n in item.quantity" :key="n" :class="['box-bottle',item.spaceCost===2?'box-bottle-besar':'box-bottle-kecik']" :style="{gridColumn:`span ${Math.min(4,item.spaceCost)}`,aspectRatio:`${Math.min(4,item.spaceCost)} / 1`}"><i/></span></template><span v-for="n in remaining" :key="`free-${n}`" class="box-bottle box-bottle-vacant"/></div></div><div class="bottle-box-counts" aria-live="polite" aria-atomic="true"><span class="eyebrow">DAY’S BOX · TOP VIEW</span><span class="bottle-box-date">{{date}}</span><strong>{{usedSpaces}}<small> / {{day.capacity}} spaces used</small></strong><span v-for="item in items" :key="item.productId+'-'+item.spaceCost"><i :class="['box-count-dot',{besar:item.spaceCost===2}]"/>{{item.quantity}} × {{item.name}} · {{item.spaceCost}} space{{item.spaceCost===1?'':'s'}} each</span><small>{{remaining}} {{remaining===1?'space':'spaces'}} left</small></div></div><div class="bottle-box-availability" aria-live="polite" aria-atomic="true"><strong>You can order up to</strong><span>{{availability.map(p=>`${p.max} ${p.name}`).join(' or ')}}</span><small>Mix main products to fit the box. Counts include your cart and available stock. Filled spaces are reserved across all customers. Unpaid reservations expire after 20 minutes.</small></div></div><p v-else class="helper">Choose a delivery date to see its box and available quantities.</p>
 </template>

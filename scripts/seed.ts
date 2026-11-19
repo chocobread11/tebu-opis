@@ -1,3 +1,5 @@
+import { migrateStoredTicket } from '../shared/legacy-products'
+import type { Ticket } from '../shared/domain'
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -47,6 +49,7 @@ try {
       }
       for (const [index, fixture] of sampleOrders.entries()) {
         const id = sampleId(100 + index)
+        const cart = migrateStoredTicket({ cart: fixture.cart, varietyId: fixture.customer % 2 ? 'tebu-2' : 'tebu-1' } as Ticket).cart
         if (await tx.order.findUnique({ where: { id } })) continue
         const scheduleId = fixture.past ? pastId : drops[0]!.id
         await tx.$queryRaw`SELECT id FROM schedules WHERE id = ${scheduleId} FOR UPDATE`
@@ -55,13 +58,13 @@ try {
         const hasReceipt = fixture.status !== 'pending_payment'
         const receiptId = hasReceipt ? sampleId(300 + index) : null
         await tx.order.create({ data: {
-          id, varietyId: fixture.customer % 2 ? 'tebu-2' : 'tebu-1', varietyName: `Tebu ${fixture.customer % 2 + 1}`, token: sampleToken(id), requestId: sampleId(200 + index), customerId: sampleCustomers[fixture.customer]!.id,
-          scheduleId, sequence, tag: `#A${String(sequence).padStart(2, '0')}`, cart: fixture.cart,
-          bottles: bottleCount(fixture.cart), total: total(fixture.cart), status: fixture.status,
+          id, token: sampleToken(id), requestId: sampleId(200 + index), customerId: sampleCustomers[fixture.customer]!.id,
+          scheduleId, sequence, cart: cart,
+          bottles: bottleCount(cart), total: total(cart), status: fixture.status,fulfilled:fixture.status==='collected',
           packed: fixture.packed ?? false, notified: fixture.past ?? false,
           createdAt: fixture.past ? past : now,
           expiresAt: new Date((fixture.past ? past : now).getTime() + (fixture.expired ? -20 : 20) * 60_000),
-          items: { create: products.filter(product => fixture.cart[product.id] > 0).map(product => ({ productId: product.id, quantity: fixture.cart[product.id], unitPrice: product.price })) },
+          items: { create: products.filter(product => (cart[product.id] ?? 0) > 0).map(product => ({ productId: product.id, quantity: cart[product.id] ?? 0, unitPrice: product.price, name: product.name, size: product.size, kind: product.kind, spaceCost: product.spaceCost ?? 0 })) },
         } })
         if (receiptId) {
           await tx.media.create({ data: { id: receiptId, filename: receiptFilename, kind: 'receipt', orderId: id } })
@@ -70,10 +73,11 @@ try {
       }
       await tx.expense.upsert({ where: { id: sampleId(600) }, update: {}, create: { id: sampleId(600), date: now, amount: 2450, note: 'Sample bottles and paper bags' } })
       await tx.expense.upsert({ where: { id: sampleId(601) }, update: {}, create: { id: sampleId(601), date: past, amount: 1200, note: 'Sample transport' } })
-      await tx.harvest.upsert({ where: { id: sampleId(700) }, update: {}, create: { id: sampleId(700), date: past, type: 'Tebu 1', varietyId: 'tebu-1', quantity: 25.5, kecikQty: 40, besarQty: 20 } })
-      await tx.harvest.upsert({ where: { id: sampleId(701) }, update: {}, create: { id: sampleId(701), date: past, type: 'Tebu 2', varietyId: 'tebu-2', quantity: 20, kecikQty: 30, besarQty: 15 } })
+      for (const [index, p] of products.filter(p => p.kind === 'bottle').entries()) {
+        await tx.stockEntry.upsert({ where: { id: sampleId(700 + index) }, update: {}, create: { id: sampleId(700 + index), productId: p.id, date: past, quantity: p.spaceCost === 2 ? 20 : 40, note: 'Sample starting stock' } })
+      }
     }, { timeout: 30_000 })
-    console.log('Sample data ready: products, 4 customers, 8 orders, 2 expenses, 2 harvests, receipt/freezer images. Existing records are preserved.')
+    console.log('Sample data ready: products, 4 customers, 8 orders, 2 expenses, 4 restocks, receipt/freezer images. Existing records are preserved.')
     console.log('Local customer bearer tokens:')
     for (const customer of sampleCustomers) console.log(`${customer.name} (${customer.phone}): ${sampleToken(customer.id)}`)
     console.log('Sample pickup tickets:')

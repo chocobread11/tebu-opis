@@ -1,15 +1,19 @@
+import { defaultWhatsAppOpening } from '~/shared/whatsapp'
+import { demoInventory } from '~/shared/demo-inventory'
 import { migrateStoredTicket } from '~/shared/legacy-products'
-import { demoVarieties, malaysiaToday, type CalendarDay, type CaneStock, type Ticket } from '~/shared/domain'
+import { demoVarieties, malaysiaToday, type Product, type CalendarDay, type CaneStock, type Ticket } from '~/shared/domain'
 
 export function useAdmin() {
   const shop = useShop()
+  const whatsappOpening = useState('whatsapp-opening', () => defaultWhatsAppOpening)
   const local = shop.demo
+  const products = useState<Product[]>('admin-product-catalog', () => local ? shop.products : [])
   const orders = useState<Ticket[]>('admin-orders', () => [])
   const schedules = useState<CalendarDay[]>('admin-schedules', () => [])
   const varieties = useState<CaneStock[]>('admin-varieties', () => local ? demoVarieties.map(v => ({ ...v })) : [])
   const adminKey = useState('admin-key', () => '')
   const authenticated = useState('admin-authenticated', () => false)
-  const headers = computed(() => ({ Authorization: `Bearer ${adminKey.value}` }))
+  const headers = computed(() => { const value: Record<string, string> = {}; if (adminKey.value) value.Authorization = `Bearer ${adminKey.value}`; return value })
   const revision = useState('admin-revision', () => 0)
   const snapshot = useState<Record<string, Ticket>>('admin-demo-snapshot', () => ({}))
   function invalidate() { revision.value++ }
@@ -39,15 +43,32 @@ export function useAdmin() {
     localStorage.setItem('tebu_demo_orders', JSON.stringify(shop.tickets.value))
   }
 
+  async function signIn() {
+    if (local) { await refresh(); adminKey.value = ''; return }
+    try { await $fetch('/api/admin/session', { method: 'POST', headers: headers.value, body: {} }) }
+    finally { adminKey.value = '' }
+    await refresh()
+  }
+  async function restore() {
+    if (local) return false
+    try { await refresh(); return true } catch { return false }
+  }
+  async function logout() {
+    if (!local) await $fetch('/api/admin/session/logout', { method: 'POST', body: {} })
+    invalidate(); adminKey.value = ''; authenticated.value = false
+    orders.value = []; schedules.value = []; products.value = []; varieties.value = []
+  }
   async function refresh() {
     if (!local) {
       const request = ++revision.value
       try {
-        const data = await $fetch<{ orders: Ticket[]; schedules: CalendarDay[]; varieties: CaneStock[] }>('/api/admin', { headers: headers.value })
+        const data = await $fetch<{ orders: Ticket[]; schedules: CalendarDay[]; varieties: CaneStock[]; products: Product[]; whatsappOpening: string }>('/api/admin', { headers: headers.value })
         if (request !== revision.value) return
         orders.value = data.orders
         schedules.value = data.schedules.map(row => ({ ...row, remaining: row.capacity }))
         varieties.value = data.varieties
+        products.value = data.products
+        whatsappOpening.value = data.whatsappOpening
         authenticated.value = true
       } catch (error: any) {
         if (request !== revision.value) return
@@ -57,6 +78,8 @@ export function useAdmin() {
       return
     }
     shop.load()
+    whatsappOpening.value = localStorage.getItem('tebu_whatsapp_opening') || defaultWhatsAppOpening
+    products.value = demoInventory(JSON.parse(localStorage.getItem('tebu_demo_products') || 'null'), JSON.parse(localStorage.getItem('tebu_demo_stock') || '[]'), shop.tickets.value).products
     try { orders.value = JSON.parse(localStorage.getItem('tebu_admin_orders') || '[]').map(migrateStoredTicket) } catch { orders.value = [] }
     for (const ticket of shop.tickets.value) {
       const existing = orders.value.find(order => order.token === ticket.token)
@@ -87,5 +110,5 @@ export function useAdmin() {
     persist()
   }
 
-  return { local, orders, schedules, varieties, adminKey, authenticated, headers, persist, refresh, invalidate }
+  return { products, whatsappOpening, local, orders, schedules, varieties, adminKey, authenticated, headers, persist, refresh, invalidate, signIn, restore, logout }
 }

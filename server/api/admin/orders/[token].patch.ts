@@ -1,17 +1,17 @@
+import { guardOrderChange } from '../../../utils/order-guards'
 import { z } from 'zod'
-import { bottleCount, type ProductId } from '../../../../shared/domain'
-const qty = z.number().int().min(0).max(10000)
+import { sameCart, bottleCount, type ProductId } from '../../../../shared/domain'
 const input = z.object({
-  name: z.string().trim().min(1).max(80), scheduleId: z.iso.date(), varietyId: z.enum(['tebu-1', 'tebu-2']),
+  name: z.string().trim().min(1).max(80), scheduleId: z.iso.date(), varietyId: z.string().max(80).nullish(),
   status: z.enum(['pending_payment', 'pending_review', 'confirmed', 'ready', 'collected', 'rejected']),
   paymentStatus: z.enum(['paid', 'unpaid']).optional(),
   remarks: orderRemarksInput.optional(),
-  cart: z.object({ kecik: qty, besar: qty, asam: qty, limau: qty }).strict(),
+  cart: cartInput,
 }).strict()
 export default defineEventHandler(async event => {
   requireAdmin(event)
   const parsed = input.safeParse(await readBody(event))
-  if (!parsed.success || !bottleCount(parsed.data.cart)) throw createError({ statusCode: 400, message: 'Enter a customer, date, variety and at least one bottle.' })
+  if (!parsed.success) throw createError({ statusCode: 400, message: 'Enter a customer, date and at least one main product.' })
   const data = parsed.data
   const initial = await findOrder(getRouterParam(event, 'token') || '')
   const order = await db().$transaction(async tx => {
@@ -21,29 +21,37 @@ export default defineEventHandler(async event => {
     await tx.$queryRaw`SELECT id FROM orders WHERE id = ${initial.id}::uuid FOR UPDATE`
     const current = await tx.order.findUnique({ where: { id: initial.id }, include: { items: true } })
     if (!current || current.scheduleId !== initial.scheduleId || current.varietyId !== initial.varietyId) throw createError({ statusCode: 409, message: 'This order changed. Refresh and try again.' })
+    guardOrderChange(current,data)
+    if (current.refundedTotal && data.paymentStatus && data.paymentStatus !== current.manualPaymentStatus) throw createError({ statusCode: 409, message: 'Orders with refunds keep their original payment record.' })
     if (!current.manualPaymentStatus && data.paymentStatus) throw createError({ statusCode: 400, message: 'Only manual orders have a separate payment status.' })
     if (current.manualPaymentStatus && ['pending_payment', 'pending_review'].includes(data.status)) throw createError({ statusCode: 400, message: 'Manual orders use the paid or unpaid payment setting.' })
-    const variety = await tx.caneVariety.findUniqueOrThrow({ where: { id: data.varietyId } })
-    const ids = (Object.keys(data.cart) as ProductId[]).filter(id => data.cart[id] > 0)
-    const catalog = await tx.product.findMany({ where: { id: { in: ids } } })
-    if (catalog.length !== ids.length) throw createError({ statusCode: 400, message: 'An item no longer exists.' })
-    const items = catalog.map(product => ({ productId: product.id, quantity: data.cart[product.id as ProductId], unitPrice: current.items.find(item => item.productId === product.id)?.unitPrice ?? product.price }))
-    const changed = current.scheduleId !== data.scheduleId || current.varietyId !== data.varietyId || (Object.keys(data.cart) as ProductId[]).some(id => (current.cart as Record<ProductId, number>)[id] !== data.cart[id])
+    const catalog = await orderCatalog(tx, data.cart, data.varietyId, true)
+    const variety = catalog.some(p => p.varietyTracked) && data.varietyId ? await tx.caneVariety.findUniqueOrThrow({ where: { id: data.varietyId } }) : null
+    const items = orderLines(catalog, data.cart).map(item => {
+      const previous = current.items.find(row => row.productId === item.productId)
+      return { ...item, ...(previous ? { unitPrice: previous.unitPrice, name: previous.name ?? item.name, size: previous.size ?? item.size, kind: previous.kind ?? item.kind, spaceCost: previous.kind ? previous.spaceCost : item.spaceCost } : {}) }
+    })
+    const mainQuantity = items.filter(item => item.kind === 'bottle').reduce((sum,item) => sum + item.quantity,0)
+    if (!mainQuantity) throw createError({ statusCode: 400, message: 'Keep at least one main product on this order.' })
+    const changed = current.scheduleId !== data.scheduleId || current.varietyId !== (variety?.id ?? null) || !sameCart(current.cart as Record<ProductId,number>, data.cart)
     let sequence = current.sequence
     if (current.scheduleId !== data.scheduleId) sequence = ((await tx.order.aggregate({ where: { scheduleId: data.scheduleId }, _max: { sequence: true } }))._max.sequence ?? 0) + 1
     const updated = await tx.order.update({ where: { id: current.id }, data: {
-      customerName: data.name, scheduleId: data.scheduleId, sequence, tag: `#A${String(sequence).padStart(2, '0')}`,
+      customerName: data.name, scheduleId: data.scheduleId, sequence,
       ...(data.remarks !== undefined ? { remarks: data.remarks || null } : {}),
-      varietyId: variety.id, varietyName: variety.name, cart: data.cart, bottles: bottleCount(data.cart), status: data.status,
+      varietyId: variety?.id ?? null, varietyName: variety?.name ?? null, cart: data.cart, bottles: mainQuantity, status: data.status,
       total: items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0),
       ...(current.manualPaymentStatus ? { manualPaymentStatus: data.paymentStatus ?? current.manualPaymentStatus } : {}),
       packed: ['ready', 'collected'].includes(data.status) || data.status === 'confirmed' && !changed && current.packed,
+      fulfilled: current.fulfilled || data.status==='collected',
+      cancellationReason: data.status==='rejected' ? current.cancellationReason || 'Cancelled by operator' : null,
       notified: ['ready', 'collected'].includes(data.status) && !changed && current.notified,
       ...(data.status === 'pending_payment' && current.status !== 'pending_payment' ? { expiresAt: new Date(Date.now() + 20 * 60_000) } : {}),
       items: { deleteMany: {}, create: items },
     } })
     await ensureDailyCapacity(tx, await tx.schedule.findUniqueOrThrow({ where: { id: data.scheduleId } }), { kecik: 0, besar: 0 })
-    await ensureStockNotOversold(tx, [variety.id])
+    await ensureStockNotOversold(tx, variety ? [variety.id] : [])
+    await recordAudit(tx,'order',current.id,'edited',{...current},updated)
     return updated
   })
   return { order: await toTicket(order, true) }

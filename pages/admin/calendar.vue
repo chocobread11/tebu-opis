@@ -3,7 +3,10 @@ import { RefreshCw } from '~/lib/icons'
 import { malaysiaToday } from '~/shared/domain'
 const shop = useShop()
 const admin = useAdmin()
-const selected = ref(malaysiaToday())
+const route = useRoute()
+function linkedDate() { return typeof route.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date) ? route.query.date : malaysiaToday() }
+const selected = ref(linkedDate())
+watch(() => route.query.date, () => { selected.value = linkedDate() })
 const busy = ref(false)
 const error = ref('')
 const revision = ref(0)

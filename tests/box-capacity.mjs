@@ -1,3 +1,4 @@
+import './helpers/disable-telegram.mjs'
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
@@ -23,7 +24,7 @@ const request = async (path, { token, body, ...options } = {}) => {
   return { status: response.status, data: await response.json() }
 }
 let server, browser, created = false, output = '', customerToken
-const checkout = (scheduleId, quantities, varietyId = 'tebu-1', requestId = randomUUID()) => request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId, varietyId, requestId, cart: quantities } })
+const checkout = (scheduleId, quantities, varietyId = 'tebu-1', requestId = randomUUID()) => request('/api/orders', { method: 'POST', token: customerToken, body: { scheduleId, varietyId, requestId, cart: varietyId === 'tebu-2' ? Object.fromEntries(Object.entries(quantities).map(([id,qty])=>[['kecik','besar'].includes(id)?`tebu-2-${id}`:id,qty])) : quantities } })
 const availability = async id => (await request('/api/catalog')).data.days.find(row => row.id === id)
 const reset = async () => {
   await sql.query('DELETE FROM orders')
@@ -35,7 +36,7 @@ try {
   assert.equal(migrated.status, 0, migrated.stderr || migrated.stdout)
   await sql.connect()
   await sql.query("INSERT INTO schedules(id) SELECT to_char(day, 'YYYY-MM-DD') FROM generate_series($1::date, $1::date + 4, interval '1 day') AS day", [today])
-  await sql.query("INSERT INTO harvests(date,quantity,type,variety_id,kecik_qty,besar_qty) SELECT $1::date,1,name,id,500,500 FROM cane_varieties", [today])
+  await sql.query("INSERT INTO stock_entries(product_id,date,quantity,note) SELECT id,$1::date,500,'Capacity test stock' FROM products WHERE kind='bottle'", [today])
   server = spawn(process.execPath, ['.output/server/index.mjs'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
   server.stdout.on('data', chunk => { output += chunk }); server.stderr.on('data', chunk => { output += chunk })
   let ready = false
@@ -118,8 +119,8 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 900 }, extraHTTPHeaders: { 'X-Forwarded-For': `127.0.0.${width === 390 ? 7 : 8}` } }); page.setDefaultTimeout(12000)
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.goto(base, { waitUntil: 'networkidle' })
-    const small = page.getByRole('group', { name: 'Botol Kecik quantity', exact: true })
-    const big = page.getByRole('group', { name: 'Botol Besar quantity', exact: true })
+    const small = page.getByRole('group', { name: 'Tebu 1 · Kecik quantity', exact: true })
+    const big = page.getByRole('group', { name: 'Tebu 1 · Besar quantity', exact: true })
     assert.equal(await small.getByRole('spinbutton').getAttribute('aria-valuemax'), '12')
     assert.equal(await big.getByRole('spinbutton').getAttribute('aria-valuemax'), '6')
     for (let i = 0; i < 12; i++) await small.locator('.quantity-increase').click()

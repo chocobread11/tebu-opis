@@ -3,14 +3,14 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
-    "dev": "nuxt dev --host 127.0.0.1",
-    "dev:lan": "nuxt dev --host 0.0.0.0",
+    "dev": "prisma generate && nuxt dev --host 127.0.0.1",
+    "dev:lan": "prisma generate && nuxt dev --host 0.0.0.0",
     "build": "nuxt build",
     "generate": "NUXT_PUBLIC_DEMO=true nuxt generate",
-    "start": "node .output/server/index.mjs",
+    "start": "node scripts/start.mjs",
     "postinstall": "nuxt prepare && prisma generate",
     "typecheck": "nuxt typecheck",
     "test": "node --import tsx --test tests/*.test.ts",
@@ -28,11 +28,28 @@
     "test:product-rename": "node tests/product-rename.mjs",
     "test:compress": "node tests/compress.mjs",
     "test:profile-remarks": "node tests/profile-remarks.mjs",
+    "test:products-inventory": "node tests/products-inventory.mjs",
+    "test:checkout-access": "node tests/checkout-access.mjs",
     "test:session": "node tests/customer-session.mjs",
     "storage:check": "node --import tsx scripts/check-r2.ts",
     "storage:organize": "node --import tsx scripts/organize-r2.ts",
     "test:phone-receipt": "node tests/phone-receipt.mjs",
-    "test:admin-transactions": "node tests/admin-transactions.mjs"
+    "test:admin-transactions": "node tests/admin-transactions.mjs",
+    "storage:products": "node --import tsx scripts/migrate-product-images.ts",
+    "test:prisma-dev-reload": "node tests/prisma-dev-reload.mjs",
+    "test:flows": "node scripts/run-flow-tests.mjs",
+    "test:order-numbers": "node tests/order-numbers.mjs",
+    "test:recovery": "node tests/recovery-flows.mjs",
+    "telegram:chats": "node --import tsx scripts/telegram-chats.ts",
+    "test:telegram": "node tests/telegram-notifications.mjs",
+    "test:admin-session": "node tests/admin-session.mjs",
+    "test:settings": "node tests/settings.mjs",
+    "ops:backup": "node --import tsx scripts/backup.ts",
+    "ops:restore": "node --import tsx scripts/restore.ts",
+    "ops:release": "node --import tsx scripts/release.ts",
+    "storage:migrate-local": "node --import tsx scripts/migrate-local-media.ts",
+    "test:deployment": "node --import tsx tests/deployment.mjs",
+    "deploy:check": "node --import tsx scripts/check-production.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
@@ -45,16 +62,16 @@
     "clsx": "^2.1.1",
     "dotenv": "^18.0.9",
     "lucide-vue-next": "1.0.0",
-    "nuxt": "3.21.11",
+    "nuxt": "4.6.4",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "reka-ui": "2.11.0",
-    "sharp": "0.34.5",
+    "sharp": "0.35.5",
     "tailwind-merge": "^2.6.0",
     "vaul-vue": "0.4.1",
     "vue": "3.5.44",
-    "vue-router": "4.6.4",
-    "zod": "4.4.3"
+    "vue-router": "5.5.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "20.19.21",
@@ -62,8 +79,11 @@
     "@types/qrcode": "^1.5.6",
     "playwright": "1.62.0",
     "prisma": "7",
-    "tsx": "4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3",
     "vue-tsc": "3.3.13"
+  },
+  "overrides": {
+    "readdir-glob": "4.0.0"
   }
 }

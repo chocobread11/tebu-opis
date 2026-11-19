@@ -1,3 +1,4 @@
+import './helpers/disable-telegram.mjs'
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
@@ -81,7 +82,9 @@ try {
   const changePayment=(index,paymentStatus,expectedStatus,expectedPaymentStatus)=>request(`/api/admin/orders/${token(index)}/payment`,{method:'PATCH',body:{paymentStatus,expectedStatus,expectedPaymentStatus}})
   result=await changePayment(102,'paid','pending_review','review');assert.equal(result.status,200);assert.equal(result.data.order.status,'confirmed');assert.equal(result.data.order.total,600)
   assert.equal((await changePayment(102,'rejected','pending_review','review')).status,409,'Stale review must not overwrite confirmed payment')
-  result=await changePayment(102,'rejected','confirmed','paid');assert.equal(result.status,200)
+  assert.equal((await changePayment(102,'rejected','confirmed','paid')).status,409,'Paid cancellation requires a refund')
+  assert.equal((await changePayment(102,'unpaid','confirmed','paid')).status,200)
+  result=await changePayment(102,'rejected','pending_payment','unpaid');assert.equal(result.status,200)
   await sql.query('UPDATE schedules SET capacity=1 WHERE id=$1',[today])
   assert.equal((await changePayment(102,'paid','rejected','rejected')).status,409,'Payment changes must not oversell capacity')
   assert.equal((await sql.query('SELECT status FROM orders WHERE token=$1',[token(102)])).rows[0].status,'rejected','Capacity failure rolls payment back')
@@ -103,9 +106,12 @@ try {
   assert.equal((await sql.query('SELECT name FROM customers WHERE id=$1',[customerId])).rows[0].name,'Archive Person')
   const before=(await sql.query('SELECT total,cart FROM orders WHERE token=$1',[order.token])).rows[0]
   result=await request(`/api/admin/orders/${order.token}`,{method:'PATCH',body:{...edit,cart:{...edit.cart,kecik:1000}}});assert.equal(result.status,409);assert.deepEqual((await sql.query('SELECT total,cart FROM orders WHERE token=$1',[order.token])).rows[0],before)
-  result=await request(`/api/admin/orders/${order.token}`,{method:'PATCH',body:{...edit,name:'Archive Renamed',scheduleId:'2026-08-27'}});assert.equal(result.status,200);assert.equal(result.data.order.tag,'#A02')
+  result=await request(`/api/admin/orders/${order.token}`,{method:'PATCH',body:{...edit,name:'Archive Renamed',scheduleId:'2026-08-27'}});assert.equal(result.status,200);assert.equal(result.data.order.tag,order.tag,'Moving dates preserves the issued order reference')
   result=await request(`/api/admin/orders/${order.token}`,{method:'PATCH',body:{...edit,varietyId:'tebu-2',cart:{kecik:0,besar:0,asam:1,limau:0}}});assert.equal(result.status,400)
-  console.log('PASS API: authorization, all-date search, pagination, date filter, edits, price preservation, capacity rollback and date move')
+  const simultaneousLists=await Promise.all(Array.from({length:6},()=>request('/api/admin/orders?pageSize=10')))
+  for(const list of simultaneousLists)assert.equal(list.status,200,JSON.stringify(list.data))
+  console.log('PASS API: authorization, all-date search, pagination, date filter, edits, price preservation, capacity rollback, date move and concurrent reads')
+  assert.equal((await request(`/api/admin/orders/${order.token}/payment`,{method:'PATCH',body:{paymentStatus:'unpaid',expectedStatus:'confirmed',expectedPaymentStatus:'paid'}})).status,200)
   browser=await chromium.launch({headless:true})
   await mkdir('test-results',{recursive:true})
   for(const width of [320,390,1440]) {
@@ -157,7 +163,9 @@ try {
     await page.keyboard.press('Escape');await details.waitFor({state:'hidden'})
     assert.equal(await reviewRow.getByRole('button',{name:/^View transaction/}).evaluate(element=>element===document.activeElement),true,'Row details restores keyboard focus')
     await reviewRow.getByRole('button',{name:/^Change payment/}).click()
+    const paymentResponse=page.waitForResponse(response=>response.url().includes(`/api/admin/orders/${token(102)}/payment`)&&response.request().method()==='PATCH')
     await page.getByRole('menuitem',{name:'Mark payment paid',exact:true}).click()
+    const paymentResult=await paymentResponse;assert.equal(paymentResult.status(),200,JSON.stringify(await paymentResult.json()))
     await page.waitForFunction(()=>document.querySelector('.transaction-pagination p')?.textContent?.includes('of 0 transactions'))
     assert.equal(await page.getByRole('dialog').count(),0,'Quick payment change does not open the edit dialog')
     assert.equal(await page.getByRole('alertdialog').count(),0,'Payment confirmation needs no second confirmation')

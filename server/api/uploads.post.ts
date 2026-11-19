@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { imageMimeTypes, imageUploadLimit } from '../../shared/media'
 import { prepareUploadedImage } from '../utils/upload-image'
 export default defineEventHandler(async event => {
-  const admin = isAdmin(event)
   const parts = await readMultipartFormData(event)
+  const orderToken = parts?.find(p => p.name === 'orderToken')?.data.toString()
+  const admin = !orderToken && isAdmin(event)
   const file = parts?.find(p => p.name === 'file')
   if (!file || !(imageMimeTypes as readonly string[]).includes(file.type || '') || file.data.length >= imageUploadLimit) throw createError({ statusCode: 400, message: 'Upload a JPG, PNG or WebP image smaller than 250 KB.' })
   let orderId: string | undefined
@@ -15,7 +16,7 @@ export default defineEventHandler(async event => {
     const schedule = await db().schedule.findUnique({ where: { id: scheduleId } })
     if (!schedule) throw createError({ statusCode: 404, message: 'Drop not found.' })
   } else {
-    const order = await findOrder(parts?.find(p => p.name === 'orderToken')?.data.toString() || '')
+    const order = await findOrder(orderToken || '')
     await authorizeReceipt(event, order)
     if (order.status !== 'pending_payment' || order.expiresAt <= new Date()) throw createError({ statusCode: 403, message: 'This order is not accepting receipts. Contact the operator if you have paid.' })
     orderId = order.id

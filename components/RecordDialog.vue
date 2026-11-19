@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle, DialogDescription, DialogClose } from 'reka-ui'
 import { X } from '~/lib/icons'
-const props = defineProps<{ open: boolean; title: string; description: string; busy?: boolean }>()
+const props = defineProps<{ open: boolean; title: string; description: string; busy?: boolean; contentClass?: string }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 let trigger: HTMLElement | null = null
 watch(() => props.open, open => {
@@ -18,7 +18,7 @@ function restoreFocus(event: Event) {
   <DialogRoot :open="open" @update:open="value => { if (!busy) emit('update:open', value) }">
     <DialogPortal>
       <DialogOverlay class="record-dialog-overlay" />
-      <DialogContent class="record-dialog" :aria-busy="busy" @close-auto-focus="restoreFocus">
+      <DialogContent class="record-dialog" :class="contentClass" :aria-busy="busy" @close-auto-focus="restoreFocus">
         <DialogClose class="icon-button dialog-close" :disabled="busy" aria-label="Close dialog"><X :size="18" aria-hidden="true" /></DialogClose>
         <DialogTitle class="record-dialog-title">{{ title }}</DialogTitle>
         <DialogDescription class="record-dialog-description">{{ description }}</DialogDescription>
