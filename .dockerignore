@@ -14,3 +14,7 @@ generated
 data
 test-results
 *.tar.gz
+
+public/qr
+public/private
+.openai

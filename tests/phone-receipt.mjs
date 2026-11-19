@@ -19,7 +19,7 @@ const database = new pg.Client({ connectionString: databaseUrl.toString() })
 const uploads = await mkdtemp(join(tmpdir(), 'tebu-phone-'))
 const port = '3051'
 const base = `http://127.0.0.1:${port}`
-const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: randomBytes(32).toString('hex'), NUXT_UPLOAD_DIR: uploads, NUXT_UPLOAD_STORAGE: 'local', NUXT_PUBLIC_DEMO: 'false', NUXT_SITE_URL: '', NUXT_PUBLIC_TESTING_CALENDAR: 'true', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
+const env = { ...process.env, NUXT_DATABASE_URL: databaseUrl.toString(), NUXT_ADMIN_KEY: randomBytes(32).toString('hex'), NUXT_UPLOAD_DIR: uploads, NUXT_UPLOAD_STORAGE: 'local', NUXT_PUBLIC_DEMO: 'false', NUXT_PUBLIC_DUITNOW_QR: '/favicon.svg', NUXT_SITE_URL: '', NUXT_PUBLIC_TESTING_CALENDAR: 'true', NODE_ENV: 'development', NITRO_HOST: '127.0.0.1', NITRO_PORT: port }
 let server, browser, debugPage, created = false, output = ''
 const run = args => {
   const result = spawnSync('bun', args, { env, encoding: 'utf8' })

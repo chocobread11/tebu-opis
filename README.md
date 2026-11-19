@@ -1,6 +1,5 @@
 # Tebu Drop
 
-[![CI](https://github.com/project-contributors/tebu-opis/actions/workflows/ci.yml/badge.svg)](https://github.com/project-contributors/tebu-opis/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-green?logo=node.js&logoColor=white)](package.json)
 [![Nuxt 4](https://img.shields.io/badge/Nuxt-3-00DC82?logo=nuxtdotjs&logoColor=white)](https://nuxt.com)
@@ -165,7 +164,7 @@ in comments beside the testing branches.
 | `NUXT_ADMIN_KEY` | DB mode | Admin passkey — **≥ 32 random characters** |
 | `NUXT_PUBLIC_DEMO` | always | `false` for production ordering |
 | `NUXT_UPLOAD_DIR` | DB mode | Private uploads directory (Docker: `/app/data/uploads`) |
-| `NUXT_PUBLIC_DUITNOW_QR` | optional | Payment QR image URL (defaults to `/qr/duitnow.jpeg`, served from `public/qr/duitnow.jpeg`) |
+| `NUXT_PUBLIC_DUITNOW_QR` | optional | Configure your payment QR URL separately; blank disables live checkout. Personal payment assets are not included in this repository. |
 | `NUXT_PUBLIC_MERCHANT_NAME` | optional | Payment recipient display name (defaults to `Tebu Drop`) |
 | `NUXT_PUBLIC_SUPPORT_WHATSAPP` | optional | Operator WhatsApp number for the pickup ticket's issue-report link, including country code (e.g. `60123456789`); blank hides the link |
 
@@ -192,7 +191,7 @@ A separate HttpOnly checkout cookie authorizes orders created in that browser se
 
 Orders support optional, multiline remarks (500 characters). Remarks are saved on the order, appear in payment confirmation, packing, admin tables/details, customer history and pickup tickets, and can be edited or cleared by an admin. Table previews show two lines; details and packing show the full text. Remarks are never reused for a new order. Apply migrations before running the updated server.
 
-Checkout progresses through details → DuitNow payment → receipt upload → order ticket. The action button stays below the scrollable step content. The MAE screenshot is displayed through a QR-only viewport; its original pixels and payload are unchanged. Payment receipts remain private to the operator, and an order ticket is not proof that payment has been verified.
+Checkout progresses through details → DuitNow payment → receipt upload → order ticket. The action button stays below the scrollable step content. Supply an image containing only the payment QR through private deployment configuration; no personal screenshot is bundled. Payment receipts remain private to the operator, and an order ticket is not proof that payment has been verified.
 
 `/drop` displays a phone lookup and past-transactions table. A remembered number is checked automatically. After signing in, an HttpOnly, SameSite=Lax cookie remembers the customer for 30 minutes from sign-in, across reloads and tabs (Secure on HTTPS). Automatic lookup and polling do not extend the session. Passwords and live session tokens are never saved in browser storage. Lock history signs out immediately on shared devices; password changes revoke all previous history sessions. Customers can add/change/remove password protection in history privacy settings. New checkout never asks for a history password. Without protection, anyone who knows the number can view its history. Private ticket links continue to act as bearer capabilities. Phone ownership is verified manually by the operator for password recovery; use Customer recovery to issue a one-time reset link.
 
@@ -309,7 +308,7 @@ privately per [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 project-contributors
+[MIT](LICENSE) © 2026 Project contributors
 
 ### Bottle product IDs
 

@@ -31,7 +31,7 @@ export default defineNuxtConfig({
     uploadDir: './data/uploads',
     uploadStorage: 'local',
     r2: { accountId: '', endpoint: '', accessKeyId: '', secretAccessKey: '', bucket: '', prefix: 'tebu/media' },
-    public: { demo: false, testingCalendar: false, duitnowQr: '/qr/duitnow.jpeg', merchantName: 'Tebu Drop', supportWhatsapp: '' },
+    public: { demo: false, testingCalendar: false, duitnowQr: '', merchantName: 'Tebu Drop', supportWhatsapp: '' },
   },
   app: { head: {
     htmlAttrs: { lang: 'en-MY' },

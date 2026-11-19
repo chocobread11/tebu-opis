@@ -17,3 +17,8 @@ coverage/
 .DS_Store
 *.tar.gz
 *.log
+
+# Personal payment assets and machine-specific hosting identity stay private.
+public/qr/
+public/private/
+.openai/

@@ -87,3 +87,10 @@ jobs:
             echo "::error::Committed files contain material that looks like live secrets. Redact them."
             exit 1
           fi
+      - name: Keep personal payment assets and account bindings out of Git
+        run: |
+          tracked_private_files=$(git ls-files -- public/qr public/private .openai)
+          if [ -n "$tracked_private_files" ]; then
+            echo "::error::Private payment assets or account bindings must not be committed."
+            exit 1
+          fi
