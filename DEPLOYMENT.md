@@ -37,7 +37,7 @@ docker compose --env-file .env.production -f compose.production.yml logs release
 
 The release job validates settings, creates and verifies an encrypted database/media backup in R2, runs `prisma migrate deploy`, and initializes schedules without sample orders or overwriting existing records. The app and scheduled backup service start only after release succeeds. A fresh database receives an empty pre-migration backup first. Never run development seed/reset commands against production.
 
-For Coolify, deploy this Compose file or make the `operations` image a mandatory pre-deployment job before starting the `runtime` image. Configure the domain/proxy to route to app port 3000. The runtime image runs as an unprivileged user; only the operations job needs the Prisma CLI and migration privileges. Keep one app replica until rate limiting uses shared storage.
+For Coolify with an existing PostgreSQL resource, use [compose.coolify.yml](compose.coolify.yml) and follow [COOLIFY.md](COOLIFY.md). The standalone production Compose file above creates its own database; the Coolify variant reuses yours. Configure the domain/proxy to route to app port 3000. The runtime image runs as an unprivileged user; only the operations job needs the Prisma CLI and migration privileges. Keep one app replica until rate limiting uses shared storage.
 
 ## Existing data
 
